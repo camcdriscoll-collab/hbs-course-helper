@@ -33,9 +33,9 @@ from urllib.request import Request, urlopen, build_opener, HTTPRedirectHandler
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-ENV_FILE = Path.home() / "repos" / "canvas-mcp-hbs2026" / ".env"
+ENV_FILE = Path.home() / "repos" / "hbs-course-helper" / ".env"
 CANVAS_BASE = "https://hbs.instructure.com/api/v1"
-DEST_ROOT = Path.home() / "Desktop" / "26F Coursework"
+DEST_ROOT = Path.home() / "Desktop" / "Coursework"
 
 # Boston EDT (UTC-4) — active through fall term Sep–Nov
 BOSTON = timezone(timedelta(hours=-4))

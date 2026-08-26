@@ -29,18 +29,11 @@ PACKAGES = [
 ]
 
 # Venv lives in the hbs-course-helper repo root
-_HERE = Path(__file__).resolve().parent.parent
-_VENV_PYTHON = _HERE / ".venv" / "bin" / "python3"
-# Fallback: canvas-mcp-hbs2026 venv (legacy location)
-_FALLBACK_PYTHON = Path.home() / "repos" / "canvas-mcp-hbs2026" / ".venv" / "bin" / "python3"
+_VENV_PYTHON = Path(__file__).resolve().parent.parent / ".venv" / "bin" / "python3"
 
 
 def _venv_python() -> Path:
-    if _VENV_PYTHON.exists():
-        return _VENV_PYTHON
-    if _FALLBACK_PYTHON.exists():
-        return _FALLBACK_PYTHON
-    return Path(sys.executable)
+    return _VENV_PYTHON if _VENV_PYTHON.exists() else Path(sys.executable)
 
 
 # ── PyPI version checks ───────────────────────────────────────────────────────

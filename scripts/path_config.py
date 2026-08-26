@@ -68,7 +68,6 @@ def _find_env_file(cached: str | None = None) -> Path | None:
         COURSEWORK_ROOT / ".env",
         CLAUDE_DIR / ".env",
         Path.home() / "repos" / "hbs-course-helper" / ".env",
-        Path.home() / "repos" / "canvas-mcp-hbs2026" / ".env",
         Path.home() / ".env",
     ]
     # Also search any ~/repos/*/.env

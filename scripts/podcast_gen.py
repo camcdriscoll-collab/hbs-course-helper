@@ -18,8 +18,8 @@ How it works:
 
 Prerequisites:
   - notebooklm-py installed: pip install 'notebooklm-py[browser]'
-  - One-time login (in the notebooklm-mcp directory):
-      uv run notebooklm login
+  - One-time login:
+      ~/repos/hbs-course-helper/.venv/bin/notebooklm login
   - After that, cookies are cached in ~/.notebooklm/profiles/default/
     and all scripts use them automatically.
 """
