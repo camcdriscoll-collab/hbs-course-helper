@@ -25,6 +25,7 @@ Prerequisites:
 """
 
 import asyncio
+import re as _re
 import sys
 from pathlib import Path
 
@@ -37,49 +38,35 @@ DEST_ROOT = _paths["coursework_root"]
 _COURSES  = _paths["courses"]
 COURSE_IDS = {a: d["canvas_id"] for a, d in _COURSES.items()}
 
-_INSTRUCTIONS_BASE = """\
-Create an in-depth, conversational podcast (approximately 30 minutes) for an MBA \
-student preparing for this Harvard Business School class session.
-
-Structure (approximate timing):
-1. Case Overview — walk through the full company situation in depth: what happened, \
-the key decision that needs to be made, who the players are, the numbers that matter, \
-and what's really at stake (20 min)
-2. Discussion Questions — work through each discussion question directly, \
-referencing specific facts and figures from the case. Explore the tensions and \
-tradeoffs honestly rather than giving tidy answers (10 min)
-
-Style: two hosts having a substantive academic conversation at the level of an \
-HBS second-year student. Prioritise depth and case specificity over broad generality. \
-Use HBS case discussion conventions.\
-"""
-
-_INSTRUCTIONS_WITH_SUPPLEMENTAL = """\
-Create an in-depth, conversational podcast (approximately 35 minutes) for an MBA \
-student preparing for this Harvard Business School class session.
-
-Structure (approximate timing):
-1. Case Overview — walk through the full company situation in depth: what happened, \
-the key decision that needs to be made, who the players are, the numbers that matter, \
-and what's really at stake (20 min)
-2. Frameworks & Class Prep — draw on the supplemental readings to build the \
-analytical framework most relevant to this case; note the key concepts, how they \
-apply here specifically, and what a strong participant contribution looks like (5 min)
-3. Discussion Questions — work through each discussion question directly, \
-referencing specific facts and figures from the case and applying the frameworks \
-from the supplemental materials. Explore tensions and tradeoffs honestly (10 min)
-
-Style: two hosts having a substantive academic conversation at the level of an \
-HBS second-year student. Prioritise depth and case specificity over broad generality. \
-Use HBS case discussion conventions.\
-"""
+_PROMPTS_DIR = _paths["prompts_dir"]
 
 
-def _build_instructions(reading_files: list) -> str:
-    """Use extended instructions only when supplemental readings are present."""
-    # First file is the main case (largest PDF). Any additional files are supplemental.
+def _build_instructions(reading_files: list, abbrev: str) -> str:
+    """Load podcast prompt from file, append course-specific notes if present."""
     has_supplemental = len(reading_files) > 1
-    return _INSTRUCTIONS_WITH_SUPPLEMENTAL if has_supplemental else _INSTRUCTIONS_BASE
+    prompt_file = (
+        _PROMPTS_DIR / "podcast_prompt_supplemental.md"
+        if has_supplemental
+        else _PROMPTS_DIR / "podcast_prompt.md"
+    )
+    base = prompt_file.read_text() if prompt_file.exists() else ""
+
+    # Load per-course refinement (same pattern as cheat sheet)
+    code = abbrev.replace(" ", "_")
+    refinement_file = _PROMPTS_DIR / f"podcast_prompt_{code}_refinement.md"
+    class_notes = ""
+    if refinement_file.exists():
+        raw = refinement_file.read_text().strip()
+        raw = _re.sub(r"<!--.*?-->", "", raw, flags=_re.DOTALL).strip()
+        if raw and raw != "# CLASS-SPECIFIC NOTES":
+            class_notes = f"\n\n{raw}"
+
+    if class_notes:
+        instructions = _re.sub(r"\[CLASS-SPECIFIC NOTES\].*", class_notes, base, flags=_re.DOTALL)
+    else:
+        instructions = _re.sub(r"\n*\[CLASS-SPECIFIC NOTES\].*", "", base, flags=_re.DOTALL)
+
+    return instructions.strip()
 
 
 async def _generate(date_str: str, abbrev: str):
@@ -161,7 +148,7 @@ async def _generate(date_str: str, abbrev: str):
                 await client.sources.add_text(nb.id, title, desc, wait=True)
 
         # Generate
-        instructions = _build_instructions(reading_files)
+        instructions = _build_instructions(reading_files, abbrev)
         has_supplemental = len(reading_files) > 1
         print(f"\nGenerating audio overview (~5–15 min)"
               f"{' [with supplemental frameworks]' if has_supplemental else ''}...", flush=True)
