@@ -32,7 +32,7 @@ _paths   = path_config.resolve()
 _COURSES = _paths["courses"]
 BOSTON   = timezone(timedelta(hours=-4))
 
-CALENDAR_NAME = "camcdriscoll@gmail.com"
+CALENDAR_NAME = "Canvas Assignments"
 STATE_FILE    = Path.home() / ".canvas_calendar_state.json"
 
 # Submission type classification (same logic as weekly_overview.py)

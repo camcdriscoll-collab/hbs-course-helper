@@ -98,9 +98,9 @@ def generate(week_start: datetime | None = None) -> Path:
         week_end = week_start + timedelta(days=7)
 
     week_label = week_start.strftime("%Y-%m-%d")
-    out_file   = DEST_ROOT / f"Week of {week_label} Overview.md"
+    out_file   = DEST_ROOT / f"Week of {week_label} Overview.docx"
 
-    lines = [f"# Week of {week_label}", ""]
+    lines = []
 
     for abbrev in sorted(_COURSES):
         info = _COURSES[abbrev]
@@ -163,7 +163,12 @@ def generate(week_start: datetime | None = None) -> Path:
 
         lines.append("")
 
-    out_file.write_text("\n".join(lines))
+    cr.markdown_to_docx(
+        md_text     = "\n".join(lines),
+        output_path = out_file,
+        title       = f"Week of {week_label}",
+        metadata    = {"Generated": datetime.now(tz=BOSTON).strftime("%Y-%m-%d %H:%M")},
+    )
     return out_file
 
 
