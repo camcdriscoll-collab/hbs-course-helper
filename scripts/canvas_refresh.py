@@ -706,6 +706,11 @@ def run_daily(skip_prompt_regen: bool = False, with_podcast: bool = False):
     print("\n  Organizing folders...")
     canvas_organize.organize_all(verbose=True)
 
+    print("\n  Checking for duplicates...")
+    trashed = canvas_organize.dedup_to_trash(verbose=True)
+    if trashed:
+        print(f"  {trashed} duplicate(s) moved to Trash.")
+
     print("\n  Syncing calendar...")
     calendar_sync.run()
 
