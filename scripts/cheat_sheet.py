@@ -308,12 +308,6 @@ def main():
 
     result = message.content[0].text
 
-    # Prepend verbatim Canvas posting so it's always at the top of the doc in class
-    if assignment:
-        desc_text = strip_html(assignment.get("description") or "")
-        if desc_text:
-            result = f"## Canvas: {assignment.get('name', '')}\n\n{desc_text}\n\n---\n\n" + result
-
     # Save canvas hash for staleness detection on future runs
     canvas_hash = ""
     if assignment:

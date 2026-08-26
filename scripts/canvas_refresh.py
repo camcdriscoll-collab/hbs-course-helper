@@ -305,14 +305,27 @@ def sync_course_files(course_id: int, abbrev: str, target_date_str: str | None =
 # ── Markdown → docx conversion ───────────────────────────────────────────────
 
 def _parse_inline(para, text: str) -> None:
-    """Add runs to a paragraph with **bold** and *italic* applied."""
+    """Add runs to a paragraph with **bold** and *italic* applied. Always 12pt."""
+    from docx.shared import Pt
     for seg in re.split(r'(\*\*[^*]+\*\*|\*[^*]+\*)', text):
         if seg.startswith('**') and seg.endswith('**'):
-            para.add_run(seg[2:-2]).bold = True
+            r = para.add_run(seg[2:-2])
+            r.bold = True
+            r.font.size = Pt(12)
         elif seg.startswith('*') and seg.endswith('*'):
-            para.add_run(seg[1:-1]).italic = True
+            r = para.add_run(seg[1:-1])
+            r.italic = True
+            r.font.size = Pt(12)
         elif seg:
-            para.add_run(seg)
+            para.add_run(seg).font.size = Pt(12)
+
+
+def _tight(para) -> None:
+    """Enforce 12pt font and tight spacing on a paragraph."""
+    from docx.shared import Pt
+    pf = para.paragraph_format
+    pf.space_before = Pt(0)
+    pf.space_after  = Pt(6)
 
 
 def markdown_to_docx(md_text: str, output_path: Path,
@@ -328,7 +341,18 @@ def markdown_to_docx(md_text: str, output_path: Path,
 
     doc = Document()
 
-    # Margins: 1.25 in sides, 1 in top/bottom (standard HBS report style)
+    # Force 12pt + tight spacing on all built-in styles up front
+    for style_name in ('Normal', 'Title', 'Heading 1', 'Heading 2', 'Heading 3',
+                       'List Bullet', 'List Bullet 2', 'List Number'):
+        try:
+            st = doc.styles[style_name]
+            st.font.size = Pt(12)
+            st.paragraph_format.space_before = Pt(0)
+            st.paragraph_format.space_after  = Pt(6)
+        except KeyError:
+            pass
+
+    # Margins: 1.25 in sides, 1 in top/bottom
     for section in doc.sections:
         section.top_margin    = Inches(1)
         section.bottom_margin = Inches(1)
@@ -336,16 +360,17 @@ def markdown_to_docx(md_text: str, output_path: Path,
         section.right_margin  = Inches(1.25)
 
     # Title
-    doc.add_heading(title, level=0)
+    p = doc.add_heading(title, level=0)
+    _tight(p)
 
-    # Metadata block (small, grey-ish)
+    # Metadata block
     for key, val in metadata.items():
         p = doc.add_paragraph()
         r = p.add_run(f"{key}: ")
         r.bold = True
-        r.font.size = Pt(9)
-        p.add_run(val).font.size = Pt(9)
-    doc.add_paragraph()  # spacer after metadata
+        r.font.size = Pt(12)
+        p.add_run(val).font.size = Pt(12)
+        _tight(p)
 
     for line in md_text.split('\n'):
         s = line.rstrip()
@@ -353,11 +378,17 @@ def markdown_to_docx(md_text: str, output_path: Path,
         if not s:
             continue
         elif s.startswith('### '):
-            _parse_inline(doc.add_heading(level=3), s[4:])
+            p = doc.add_heading(level=3)
+            _parse_inline(p, s[4:])
+            _tight(p)
         elif s.startswith('## '):
-            _parse_inline(doc.add_heading(level=2), s[3:])
+            p = doc.add_heading(level=2)
+            _parse_inline(p, s[3:])
+            _tight(p)
         elif s.startswith('# '):
-            _parse_inline(doc.add_heading(level=1), s[2:])
+            p = doc.add_heading(level=1)
+            _parse_inline(p, s[2:])
+            _tight(p)
         elif re.match(r'^[-*_]{3,}$', s):
             # Horizontal rule via paragraph bottom border
             p = doc.add_paragraph()
@@ -370,16 +401,23 @@ def markdown_to_docx(md_text: str, output_path: Path,
             bottom.set(qn('w:color'), 'AAAAAA')
             pBdr.append(bottom)
             pPr.append(pBdr)
+            _tight(p)
         elif re.match(r'^    [-*] |^  [-*] ', line):
-            _parse_inline(doc.add_paragraph(style='List Bullet 2'),
-                          s.lstrip('*- \t'))
+            p = doc.add_paragraph(style='List Bullet 2')
+            _parse_inline(p, s.lstrip('*- \t'))
+            _tight(p)
         elif s.startswith('- ') or s.startswith('* '):
-            _parse_inline(doc.add_paragraph(style='List Bullet'), s[2:])
+            p = doc.add_paragraph(style='List Bullet')
+            _parse_inline(p, s[2:])
+            _tight(p)
         elif re.match(r'^\d+\. ', s):
-            _parse_inline(doc.add_paragraph(style='List Number'),
-                          re.sub(r'^\d+\. ', '', s))
+            p = doc.add_paragraph(style='List Number')
+            _parse_inline(p, re.sub(r'^\d+\. ', '', s))
+            _tight(p)
         else:
-            _parse_inline(doc.add_paragraph(style='Normal'), s)
+            p = doc.add_paragraph(style='Normal')
+            _parse_inline(p, s)
+            _tight(p)
 
     doc.save(str(output_path))
 
@@ -559,12 +597,6 @@ def generate_notes(session: dict):
     print(f"    Tokens: {msg.usage.input_tokens:,} in / {msg.usage.output_tokens:,} out  (~${cost:.3f})")
     result = msg.content[0].text
 
-    # Prepend verbatim Canvas posting so it's always at the top of the doc in class
-    if assignment:
-        desc_text = strip_html(assignment.get("description") or "")
-        if desc_text:
-            result = f"## Canvas: {assignment.get('name', '')}\n\n{desc_text}\n\n---\n\n" + result
-
     # Save canvas hash for staleness detection on future runs
     canvas_hash = ""
     if assignment:
@@ -689,13 +721,6 @@ def run_weekly(skip_prompt_regen: bool = False, with_podcast: bool = False):
     print(f"\n{'─'*55}")
     print(f"  WEEKLY REFRESH — sync 6 weeks, notes ≤ 2 weeks")
     print(f"{'─'*55}")
-
-    # Check for dependency and upstream MCP updates (weekly — fast, just HTTP checks)
-    try:
-        import update_mcps
-        update_mcps.run(auto_upgrade=True)
-    except Exception as e:
-        print(f"  ⚠ Update check skipped: {e}")
 
     # Full file sync for all courses (6-week horizon)
     print("\n  Syncing all course files...")

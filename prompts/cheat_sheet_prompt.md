@@ -1,24 +1,50 @@
-You are preparing a case discussion packet for an HBS-style class session. You will be given (1) one or more reading documents (a case, and possibly additional documents — a note, an article, a second short case, etc.), and (2) the Canvas assignment/reading posting, which contains the discussion questions somewhere in it — the format varies by professor (sometimes a numbered list, sometimes embedded in paragraph instructions, sometimes split across "prep questions" and "in-class questions," etc.). Find and extract the actual discussion questions from whatever is provided, regardless of formatting, and ignore logistics/grading notes in the posting.
+You are preparing a case discussion packet for an HBS-style class session. You will be given one or more reading documents (a case, and possibly supplemental readings — a note, an article, a second short case) and the Canvas assignment posting, which contains the discussion questions. Find and extract the actual discussion questions regardless of how they are formatted (numbered list, embedded in paragraphs, split across prep/in-class sections, etc.) — ignore logistics and grading notes.
 
-If multiple documents are assigned: treat each one as its own case/reading and give each its own summary (see Page 1 below) — don't merge them into one generic summary. Discussion questions on page 2 may span documents; note which document a question relates to when it's not obvious.
+If multiple documents are assigned, give each its own labeled summary. Discussion question answers may reference multiple documents; note which when it isn't obvious.
 
-Produce output as follows:
+---
 
-Document 1 — Case Prep (target 2–3 pages for a standard single-case day, 12pt font; longer is fine when multiple documents or a heavier reading load justify it — don't compress past the point of being useful just to hit a page target)
+## Canvas Assignment
 
-Header — Canvas Assignment:
-Start with a short block showing what the professor actually posted. If the Canvas assignment text is roughly half a page or less, reproduce it verbatim in full. If it is longer, write a 2–3 sentence summary of the assignment context and any logistics — then always reproduce the discussion questions verbatim, exactly as written (never paraphrase them). Label it clearly: **Canvas Assignment** and, under it, **Discussion Questions** if they were listed separately. This block should be skimmable in 30 seconds and give the exact wording the professor expects students to be prepared on.
+Write a one-line **Context:** summary (bold label) — session type (case, lecture, guest), company/topic, protagonist, whether a guest is present. Example: *HBS-style case session on Classtivity, a Techstars graduate navigating product-market fit. No class guest.*
 
-Page 1 (or more, if multiple documents) — Case Summary:
-For each document, start with a high level 100 word summary of the whole document. Then, identify its actual section headings (e.g., "Company Background," "Industry Overview," "The Decision," etc. — use whatever structure that specific document has, don't force a generic template onto it) and write a tight summary per section (2–5 sentences or a short bullet cluster) capturing the key facts, numbers, players, and tensions an executive would need to recall cold in a cold-call discussion. Prioritize: who the protagonist is and what decision they face, the core numbers/data points that matter to that decision, and any competing pressures or constraints. Label each document's summary clearly with its title if there's more than one. Keep it dense and scannable — no filler, no restating the obvious.
+Then write **Discussion Questions (verbatim):** (bold label) followed by the questions as a numbered list, exactly as posted — never paraphrase. If a question has sub-parts (e.g., "- How would you..."), include them as indented sub-bullets under the parent question.
 
-Final page — Discussion Questions:
-For each discussion question you extracted, answer in crisp bullet points — not paragraphs. Each bullet should make a specific, defensible claim and back it with a case fact or number where possible. Where a question has no single right answer, briefly note the strongest 2–3 sides of the argument rather than picking one and hiding the tension. Assume I'll be cold-called and need talking points I can speak from directly. If you can't find explicit discussion questions in the Canvas material, fall back to the standard questions printed at the end of the case and flag that you did so.
+---
 
-Formatting: 12pt font, standard margins. Bold section/document headers on the summary page(s), and bold the question (or a short label) before each bullet cluster on the discussion page.
+## Case Summary
 
-Document 2 — Exhibits/Model (separate document, only if applicable)
-If any assigned document includes exhibits that require actual analysis — financial statements to ratio out, a valuation/DCF, unit economics, a sensitivity table, etc. — do that work in a separate document (spreadsheet if genuinely quantitative, otherwise a short doc). Don't compress this into the case prep doc; reference it from the summary page ("see attached model") if relevant. Skip this document if nothing requires modeling.
+Open with **Case Summary** as the top-level heading.
 
-[CLASS-SPECIFIC NOTES — optional, append below as you learn this professor's style]
-(e.g., "Prof. X cold-calls on the numbers first, always ask 'what would you do' rather than 'what happened' — weight page 2 toward recommendations over analysis." Leave blank until you have something to add.)
+For each document, use **HBS Case [number] | [Company Name]** (or just the document title if no case number) as a second-level heading.
+
+Use the document's actual section structure as third-level headings — don't force a generic template. Under each heading, write tight bullet points only (no full sentences or paragraphs). Bold selectively and sparingly: protagonist name + key decision, specific numbers that matter, exhibit references (e.g., **Exhibit 6**). Use sub-bullets for breakdowns (e.g., listing the components of a business model).
+
+Target: 1.5–2 pages total. Dense and scannable — no filler, no restating the obvious.
+
+---
+
+## Discussion Questions
+
+Open with **Discussion Questions** as the top-level heading.
+
+For each question, write a bold label in the format **Q[N]. [Short 5–8 word descriptive title]** (Normal text, not a heading). Then break the answer into named sub-sections with bold labels (e.g., **Why it failed:**, **Arguments FOR:**, **Business model:**). Write bullets under each sub-section label.
+
+**Length discipline — this is the most important constraint:**
+- Max 3 bullets per sub-section
+- Max 8 bullets total per question
+- Each bullet: one specific claim + one case fact or number, one sentence
+- Where a question has genuine tension (no single right answer), briefly note 2–3 sides — don't pick one and hide the other
+- For quantitative questions: do the key calculation inline in 2–3 bullet steps; if a full sensitivity table is needed, note "(see attached model)" and skip the table here
+
+Assume I will be cold-called. These are talking points I speak from directly — not a written argument.
+
+---
+
+## Exhibits / Model (separate document, only if needed)
+
+If any assigned document includes exhibits requiring actual analysis — financials, unit economics, DCF, sensitivity table — do that work in a separate document and reference it from the case summary as "(see attached model)." Skip this entirely if nothing requires modeling. Do not output tables or formatted grids inline in the main document — they do not render correctly.
+
+---
+
+[CLASS-SPECIFIC NOTES]
