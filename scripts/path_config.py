@@ -67,6 +67,7 @@ def _find_env_file(cached: str | None = None) -> Path | None:
     candidates += [
         COURSEWORK_ROOT / ".env",
         CLAUDE_DIR / ".env",
+        Path.home() / "repos" / "hbs-course-helper" / ".env",
         Path.home() / "repos" / "canvas-mcp-hbs2026" / ".env",
         Path.home() / ".env",
     ]
