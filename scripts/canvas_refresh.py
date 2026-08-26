@@ -774,9 +774,6 @@ def run_weekly(skip_prompt_regen: bool = False, with_podcast: bool = False):
         else:
             print(f"  [{date_str}] {abbrev} — ✓ notes up to date")
 
-        if with_podcast:
-            generate_podcast_for_session(s)
-
     print("\n  Organizing folders...")
     canvas_organize.organize_all(verbose=True)
 
@@ -793,6 +790,41 @@ def run_weekly(skip_prompt_regen: bool = False, with_podcast: bool = False):
 
     print("\n  Syncing calendar...")
     calendar_sync.run()
+
+    if with_podcast:
+        import subprocess
+        subprocess.run(["open", str(ov)], check=False)
+
+        print(f"\n{'─'*55}")
+        print(f"  PODCAST GENERATION — {len(notes_sessions)} session(s) in range")
+        print(f"{'─'*55}")
+        for i, s in enumerate(notes_sessions, 1):
+            day_label = s["due_dt"].strftime("%a %b %-d")
+            name  = s["assignment"].get("name", f"{s['date_str']} {s['abbrev']}")
+            parts = name.split("|")
+            short = (parts[-1].strip() if len(parts) > 1 else name.strip())[:55]
+            print(f"  {i:2}. {day_label}  {s['abbrev']:<10} — {short}")
+
+        print(f"\n  Enter numbers to SKIP (comma-separated), or press Enter for all:")
+        try:
+            raw = input("  > ").strip()
+        except (EOFError, KeyboardInterrupt):
+            raw = ""
+
+        skip_indices: set[int] = set()
+        for part in raw.split(","):
+            part = part.strip()
+            if part.isdigit():
+                idx = int(part) - 1
+                if 0 <= idx < len(notes_sessions):
+                    skip_indices.add(idx)
+
+        print()
+        for i, s in enumerate(notes_sessions):
+            if i in skip_indices:
+                print(f"  – Skipped: {s['abbrev']} {s['date_str']}")
+            else:
+                generate_podcast_for_session(s)
 
     print(f"\n{'─'*55}")
     print("  Weekly refresh complete.")
