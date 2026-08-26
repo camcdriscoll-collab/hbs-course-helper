@@ -92,15 +92,20 @@ def _sub_label(sub_types: list) -> str:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def generate(week_start: datetime | None = None) -> Path:
+    from collections import defaultdict
+
     if week_start is None:
         week_start, week_end = _week_window()
     else:
         week_end = week_start + timedelta(days=7)
 
-    week_label = week_start.strftime("%Y-%m-%d")
-    out_file   = DEST_ROOT / f"Week of {week_label} Overview.docx"
+    yymmdd   = week_start.strftime("%y%m%d")
+    out_dir  = DEST_ROOT / "Overview"
+    out_dir.mkdir(exist_ok=True)
+    out_file = out_dir / f"{yymmdd} Overview.docx"
 
-    lines = []
+    # ── Collect data across all courses ───────────────────────────────────────
+    by_day: dict = defaultdict(lambda: {"sessions": [], "deliverables": [], "ambiguous": []})
 
     for abbrev in sorted(_COURSES):
         info = _COURSES[abbrev]
@@ -108,13 +113,7 @@ def generate(week_start: datetime | None = None) -> Path:
             continue
         cid = info["canvas_id"]
 
-        assignments = cr.canvas_get(f"courses/{cid}/assignments", {"per_page": 100})
-
-        sessions     = []   # (dt, short_name, pages)
-        deliverables = []   # (dt, full_name, sub_label)
-        ambiguous    = []   # (dt, full_name, sub_types)
-
-        for a in assignments:
+        for a in cr.canvas_get(f"courses/{cid}/assignments", {"per_page": 100}):
             if not a.get("due_at"):
                 continue
             dt = datetime.fromisoformat(
@@ -125,48 +124,49 @@ def generate(week_start: datetime | None = None) -> Path:
             sub  = a.get("submission_types") or []
             kind = _classify(sub)
             name = a["name"]
+            day  = dt.date()
 
             if kind == "session":
                 date_str    = dt.strftime("%y%m%d")
                 session_dir = info["folder_path"] / f"{date_str} {abbrev}"
                 pages       = _count_pages(session_dir)
-                sessions.append((dt, _short_name(name, abbrev), pages))
+                by_day[day]["sessions"].append((dt, abbrev, _short_name(name, abbrev), pages))
             elif kind == "deliverable":
-                deliverables.append((dt, name, _sub_label(sub)))
+                by_day[day]["deliverables"].append((dt, abbrev, name, _sub_label(sub)))
             else:
-                ambiguous.append((dt, name, sub))
+                by_day[day]["ambiguous"].append((dt, abbrev, name, sub))
 
-        sessions.sort(key=lambda x: x[0])
-        deliverables.sort(key=lambda x: x[0])
+    # ── Build markdown, Monday → Friday ───────────────────────────────────────
+    lines = []
 
-        total_pages = sum(p for _, _, p in sessions)
+    for i in range(5):
+        day_dt    = week_start + timedelta(days=i)
+        day       = day_dt.date()
+        day_label = day_dt.strftime("%A, %B %-d")
+        lines.append(f"## {day_label}")
 
-        lines.append(f"## {abbrev}")
+        data         = by_day[day]
+        sessions     = sorted(data["sessions"],     key=lambda x: x[1])  # by abbrev
+        deliverables = sorted(data["deliverables"], key=lambda x: x[0])  # by time
+        ambiguous    = data["ambiguous"]
 
-        if sessions:
-            case_names  = ", ".join(n for _, n, _ in sessions)
-            n           = len(sessions)
-            page_note   = f"~{total_pages}p" if total_pages > 0 else "0p — files not yet synced"
-            lines.append(f"- Cases: {case_names} ({n} {'session' if n == 1 else 'sessions'}, {page_note})")
+        if not sessions and not deliverables and not ambiguous:
+            lines.append("- No classes or submissions")
         else:
-            lines.append("- Cases: nothing scheduled this week")
-
-        if deliverables:
-            for dt, name, sub in deliverables:
-                lines.append(f"- Due {_due_label(dt)}: {name} ({sub})")
-        else:
-            lines.append("- Due: nothing this week")
-
-        if ambiguous:
-            for dt, name, sub in ambiguous:
-                lines.append(f"- ⚠ Check manually: {name} — submission_types={sub}")
+            for dt, abbrev, name, sub in deliverables:
+                lines.append(f"- **DUE {_due_label(dt)}** — {name} ({abbrev}, {sub})")
+            for dt, abbrev, name, pages in sessions:
+                page_note = f"~{pages}p" if pages > 0 else "0p — files not yet synced"
+                lines.append(f"- **{abbrev}**: {name} ({page_note})")
+            for dt, abbrev, name, sub in ambiguous:
+                lines.append(f"- ⚠ Check manually: [{abbrev}] {name} — {sub}")
 
         lines.append("")
 
     cr.markdown_to_docx(
         md_text     = "\n".join(lines),
         output_path = out_file,
-        title       = f"Week of {week_label}",
+        title       = week_start.strftime("Week of %B %-d, %Y"),
         metadata    = {"Generated": datetime.now(tz=BOSTON).strftime("%Y-%m-%d %H:%M")},
     )
     return out_file
