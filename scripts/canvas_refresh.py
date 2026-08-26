@@ -26,6 +26,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 import canvas_organize
+import weekly_overview
+import calendar_sync
 
 # ── Path resolution (tolerates folder renames/moves) ─────────────────────────
 sys.path.insert(0, str(Path(__file__).parent))
@@ -703,6 +705,10 @@ def run_daily(skip_prompt_regen: bool = False, with_podcast: bool = False):
 
     print("\n  Organizing folders...")
     canvas_organize.organize_all(verbose=True)
+
+    print("\n  Syncing calendar...")
+    calendar_sync.run()
+
     print(f"\n{'─'*55}")
     print("  Daily refresh complete.")
     print(f"{'─'*55}\n")
@@ -775,6 +781,13 @@ def run_weekly(skip_prompt_regen: bool = False, with_podcast: bool = False):
         print(f"  {trashed} duplicate(s) moved to Trash.")
     else:
         print("  No duplicates found.")
+
+    print("\n  Generating weekly overview...")
+    ov = weekly_overview.generate()
+    print(f"  Saved: {ov}")
+
+    print("\n  Syncing calendar...")
+    calendar_sync.run()
 
     print(f"\n{'─'*55}")
     print("  Weekly refresh complete.")
