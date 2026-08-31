@@ -136,6 +136,31 @@ def _file_exists(session_dir: Path, stem: str) -> bool:
 
 # ── Playwright downloaders ────────────────────────────────────────────────────
 
+_MAGIC: list[tuple[bytes, str]] = [
+    (b"%PDF",           ".pdf"),
+    (b"PK\x03\x04",    ".docx"),  # ZIP-based: DOCX/XLSX/PPTX
+    (b"\xd0\xcf\x11\xe0", ".doc"),  # OLE: old DOC/XLS/PPT
+]
+
+def _fix_extension(path: Path) -> Path:
+    """
+    Check the file's magic bytes. If the extension doesn't match the actual
+    format, rename to the correct extension and return the new path.
+    """
+    try:
+        magic = path.read_bytes()[:4]
+    except Exception:
+        return path
+    for sig, ext in _MAGIC:
+        if magic.startswith(sig):
+            if path.suffix.lower() != ext:
+                new = path.with_suffix(ext)
+                path.rename(new)
+                return new
+            return path
+    return path
+
+
 async def _fetch_hbsp(ctx, href: str, title: str, session_dir: Path) -> bool:
     """
     Visit an HBSP /tu/ link using stored auth.
@@ -160,6 +185,8 @@ async def _fetch_hbsp(ctx, href: str, title: str, session_dir: Path) -> bool:
                 await dl.cancel()
                 return False
             await dl.save_as(out)
+            # Verify actual file type and rename if mismatched
+            out = _fix_extension(out)
             print(f"    ↓ [hbsp] {out.name}")
             return True
         except Exception:

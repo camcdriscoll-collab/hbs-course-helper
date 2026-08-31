@@ -562,8 +562,18 @@ def generate_notes(session: dict):
                         f"~{estimated_tokens//1000}k tokens). Summarize from Canvas description.]"
                     )})
                     continue
+                # Validate it's actually a PDF before sending to Claude
+                raw = f.read_bytes()
+                if not raw[:4].startswith(b"%PDF"):
+                    print(f"    ⚠ Skipped (not a valid PDF, got {raw[:4]!r}): {f.name}")
+                    skipped.append(f.name)
+                    content.append({"type": "text", "text": (
+                        f"=== {f.name} ===\n"
+                        f"[File has wrong format — not a valid PDF. Summarize from Canvas description.]"
+                    )})
+                    continue
                 pdf_token_used += estimated_tokens
-                data = base64.standard_b64encode(f.read_bytes()).decode()
+                data = base64.standard_b64encode(raw).decode()
                 content.append({
                     "type": "document",
                     "source": {"type": "base64", "media_type": "application/pdf", "data": data},
