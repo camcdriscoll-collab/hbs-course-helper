@@ -163,16 +163,22 @@ def _fix_extension(path: Path) -> Path:
 
 async def _fetch_hbsp(ctx, href: str, title: str, session_dir: Path) -> bool:
     """
-    Visit an HBSP /tu/ link using stored auth.
-    The link auto-downloads a PDF when logged in; falls back to page.pdf() if not.
+    Visit an HBSP link and catch the auto-triggered PDF download.
+    Works for both /tu/ public links and /api/courses/.../sclinks/ coursepack links.
     Returns True if a new file was saved.
     """
     page = await ctx.new_page()
     try:
-        # Try: catch the download that fires on an authenticated /tu/ visit
+        # Catch the download event. goto() often raises "Download is starting"
+        # when the URL immediately triggers a download — that's expected and OK.
+        # Keep the inner try/except scoped to goto() only so dl_info.value is
+        # always awaited even when goto throws.
         try:
             async with page.expect_download(timeout=25_000) as dl_info:
-                await page.goto(href, wait_until="commit", timeout=30_000)
+                try:
+                    await page.goto(href, wait_until="commit", timeout=30_000)
+                except Exception:
+                    pass  # "Download is starting" — expected, download is still captured
             dl = await dl_info.value
             suggested = dl.suggested_filename or ""
             # Use suggested name if it's a PDF, otherwise use title
@@ -190,9 +196,9 @@ async def _fetch_hbsp(ctx, href: str, title: str, session_dir: Path) -> bool:
             print(f"    ↓ [hbsp] {out.name}")
             return True
         except Exception:
-            pass  # no download triggered — fall through to print-to-PDF
+            pass  # download not triggered — fall through to print-to-PDF fallback
 
-        # Fallback: print whatever page loaded
+        # Fallback: print whatever page loaded to PDF
         stem = safe_name(title)
         if _file_exists(session_dir, stem):
             return False
@@ -201,6 +207,10 @@ async def _fetch_hbsp(ctx, href: str, title: str, session_dir: Path) -> bool:
         except Exception:
             pass
         pdf_bytes = await page.pdf(format="A4", print_background=True)
+        # Reject obviously empty/error renders (login walls, blank pages)
+        if len(pdf_bytes) < 5_000:
+            print(f"    ✗ [hbsp] {title}: got {len(pdf_bytes)}B — likely auth required, skipping")
+            return False
         out = session_dir / f"{stem}.pdf"
         out.write_bytes(pdf_bytes)
         print(f"    ↓ [hbsp→pdf] {out.name}")
