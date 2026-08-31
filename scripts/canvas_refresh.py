@@ -136,6 +136,19 @@ def canvas_download(url: str, dest: Path) -> bool:
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
+def _write_skip_stub(reading_file: Path, reason: str) -> None:
+    """
+    Write a .txt stub next to a skipped reading so it doesn't fail silently.
+    e.g. "What Is A Good Activation Rate (skipped).txt"
+    """
+    stub = reading_file.parent / f"{reading_file.stem} (skipped).txt"
+    if not stub.exists():
+        stub.write_text(
+            f"NOT included in notes — {reason}\n"
+            f"File: {reading_file.name}\n"
+        )
+
+
 def safe_name(s: str) -> str:
     s = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", s)
     return re.sub(r"-{2,}", "-", s).strip(". -")[:200]
@@ -543,8 +556,10 @@ def generate_notes(session: dict):
             if f.suffix.lower() == ".pdf":
                 pages = pdf_page_count(f)
                 if pages > PDF_PAGE_LIMIT:
+                    reason = f"too long ({pages} pages, limit {PDF_PAGE_LIMIT})"
                     print(f"    ⚠ Skipped ({pages}p > {PDF_PAGE_LIMIT}-page limit): {f.name}")
                     skipped.append(f"{f.name} ({pages}p, too long)")
+                    _write_skip_stub(f, reason)
                     content.append({"type": "text", "text": (
                         f"=== {f.name} ===\n"
                         f"[Skipped: {pages} pages exceeds the {PDF_PAGE_LIMIT}-page limit. "
@@ -554,8 +569,10 @@ def generate_notes(session: dict):
                 size_mb = f.stat().st_size / (1024 * 1024)
                 estimated_tokens = int(size_mb * PDF_TOKENS_PER_MB)
                 if pdf_token_used + estimated_tokens > MAX_PDF_TOKEN_BUDGET:
+                    reason = f"token budget (~{estimated_tokens//1000}k tokens / {size_mb:.1f} MB)"
                     print(f"    ⚠ Skipped (token budget, ~{estimated_tokens//1000}k tokens): {f.name}")
                     skipped.append(f.name)
+                    _write_skip_stub(f, reason)
                     content.append({"type": "text", "text": (
                         f"=== {f.name} ===\n"
                         f"[File omitted to stay within context limit (~{size_mb:.1f} MB / "
