@@ -35,10 +35,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 import path_config
 _paths = path_config.resolve()
 
-DEST_ROOT   = _paths["coursework_root"]
-PROMPT_FILE = _paths["master_prompt"]
-ENV_FILE    = _paths["env_file"] or Path("/dev/null")
-_COURSES    = _paths["courses"]   # abbrev → {canvas_id, folder_path, ...}
+DEST_ROOT    = _paths["coursework_root"]
+PROMPT_FILE  = _paths["master_prompt"]
+ENV_FILE     = _paths["env_file"] or Path("/dev/null")
+_COURSES     = _paths["courses"]   # abbrev → {canvas_id, folder_path, ...}
+COURSE_NAMES = path_config.COURSE_NAMES
 
 # Build flat dicts for callers that need them
 COURSES = {a: d["canvas_id"] for a, d in _COURSES.items() if d["folder_path"]}
@@ -158,6 +159,19 @@ def boston_date(iso: str) -> datetime:
 
 def yymmdd(dt: datetime) -> str:
     return dt.strftime("%y%m%d")
+
+def notes_heading(date_str: str, abbrev: str) -> str:
+    """
+    Build the Notes document heading: 'Full Course Name: Month D, YYYY'
+    e.g. 'Corporate Financial Operations: September 2, 2026'
+    """
+    from datetime import date as _date
+    y = int("20" + date_str[:2])
+    m = int(date_str[2:4])
+    d = int(date_str[4:6])
+    date_long = _date(y, m, d).strftime("%B %-d, %Y")
+    full_name = COURSE_NAMES.get(abbrev, abbrev)
+    return f"{full_name}: {date_long}"
 
 def pdf_page_count(path: Path) -> int:
     """Return page count of a PDF. Uses pypdf if available, falls back to regex."""
@@ -650,7 +664,7 @@ def generate_notes(session: dict):
     markdown_to_docx(
         md_text     = result,
         output_path = output_file,
-        title       = f"{date_str} {abbrev} Notes",
+        title       = notes_heading(date_str, abbrev),
         metadata    = metadata,
     )
     print(f"    ✅ Generated: {output_file.name}")

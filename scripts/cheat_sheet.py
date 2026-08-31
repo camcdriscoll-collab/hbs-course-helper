@@ -329,10 +329,14 @@ def main():
     if skipped:
         metadata["Skipped"] = ", ".join(skipped)
 
+    # Heading: "Full Course Name: Month D, YYYY"
+    _parts   = session_folder_name.split()
+    _heading = _cr.notes_heading(_parts[0], _parts[1]) if len(_parts) >= 2 else session_folder_name
+
     _cr.markdown_to_docx(
         md_text     = result,
         output_path = output_file,
-        title       = f"{session_folder_name} Notes",
+        title       = _heading,
         metadata    = metadata,
     )
     print(f"\n✅ Saved: {output_file}")

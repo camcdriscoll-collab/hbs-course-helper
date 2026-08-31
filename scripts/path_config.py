@@ -40,6 +40,14 @@ CANVAS_IDS: dict[str, int] = {
     "LTV":  17019,
 }
 
+# ── Full course names (for Notes document headings) ────────────────────────────
+COURSE_NAMES: dict[str, str] = {
+    "CATS": "Capitalism and the State",
+    "CFO":  "Corporate Financial Operations",
+    "LME":  "Law, Management and Entrepreneurship",
+    "LTV":  "Launching Tech Ventures in the Age of AI",
+}
+
 # ── Config file I/O ───────────────────────────────────────────────────────────
 
 def _load_config() -> dict:
