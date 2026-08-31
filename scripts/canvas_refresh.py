@@ -26,6 +26,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 import canvas_organize
+import canvas_readings
 import weekly_overview
 import calendar_sync
 
@@ -682,11 +683,15 @@ def run_daily(skip_prompt_regen: bool = False, with_podcast: bool = False):
         label    = s["assignment"].get("name", f"{date_str} {abbrev}")[:60]
         print(f"\n  [{date_str}] {abbrev} — {label}")
 
-        # Sync Canvas files for this session
+        # Sync Canvas files + externally-linked readings for this session
         sync_course_files(s["course_id"], abbrev, target_date_str=date_str)
 
         course_folder = (_COURSES.get(abbrev, {}).get("folder_path") or DEST_ROOT / abbrev)
         session_dir = course_folder / f"{date_str} {abbrev}"
+        n_read = canvas_readings.sync_reading_links(s["assignment"], session_dir)
+        if n_read:
+            print(f"    ↓ {n_read} reading(s) saved")
+
         desc_text = strip_html(s["assignment"].get("description") or "")
         canvas_hash = hashlib.md5(desc_text.encode()).hexdigest()[:12]
         stale, reason = notes_are_stale(
@@ -759,6 +764,13 @@ def run_weekly(skip_prompt_regen: bool = False, with_podcast: bool = False):
             print(f"  [{date_str}] {abbrev} — files only (>2 weeks out)")
             continue
 
+        # Always sync Canvas folder files + external reading links for sessions in window
+        print(f"\n  [{date_str}] {abbrev} — {label}")
+        sync_course_files(s["course_id"], abbrev, target_date_str=date_str)
+        n_read = canvas_readings.sync_reading_links(s["assignment"], session_dir)
+        if n_read:
+            print(f"    ↓ {n_read} reading(s) saved")
+
         desc_text = strip_html(s["assignment"].get("description") or "")
         canvas_hash = hashlib.md5(desc_text.encode()).hexdigest()[:12]
         stale, reason = notes_are_stale(
@@ -766,13 +778,10 @@ def run_weekly(skip_prompt_regen: bool = False, with_podcast: bool = False):
             canvas_desc_hash=canvas_hash, skip_prompt_regen=skip_prompt_regen,
         )
         if stale:
-            print(f"\n  [{date_str}] {abbrev} — {label}")
-            # Targeted file sync for this session too
-            sync_course_files(s["course_id"], abbrev, target_date_str=date_str)
             print(f"    → Regenerating Notes ({reason})")
             generate_notes(s)
         else:
-            print(f"  [{date_str}] {abbrev} — ✓ notes up to date")
+            print(f"    ✓ Notes up to date")
 
     print("\n  Organizing folders...")
     canvas_organize.organize_all(verbose=True)
