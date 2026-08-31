@@ -34,14 +34,10 @@ MASTER_PROMPT   = PROMPTS_DIR / "cheat_sheet_prompt.md"
 
 # ── Canvas course IDs (permanent — assigned by Canvas, never change) ──────────
 CANVAS_IDS: dict[str, int] = {
-    "CATS":       16927,
-    "CFO":        16968,
-    "ENT FIN":    17014,
-    "INNOV SCAL": 16952,
-    "LTV":        17019,
-    "MCAS":       17025,
-    "MHC":        17040,
-    "TAF":        16966,
+    "CATS": 16927,
+    "CFO":  16968,
+    "LME":  17009,
+    "LTV":  17019,
 }
 
 # ── Config file I/O ───────────────────────────────────────────────────────────
