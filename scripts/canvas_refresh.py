@@ -29,6 +29,7 @@ import canvas_organize
 import canvas_readings
 import weekly_overview
 import calendar_sync
+import participation_tracker
 
 # ── Path resolution (tolerates folder renames/moves) ─────────────────────────
 sys.path.insert(0, str(Path(__file__).parent))
@@ -840,6 +841,12 @@ def run_weekly(skip_prompt_regen: bool = False, with_podcast: bool = False):
 
     print("\n  Syncing calendar...")
     calendar_sync.run()
+
+    print("\n  Refreshing participation tracker...")
+    try:
+        participation_tracker.refresh()
+    except Exception as e:
+        print(f"  ⚠ Participation tracker failed: {e}")
 
     if with_podcast:
         import subprocess
