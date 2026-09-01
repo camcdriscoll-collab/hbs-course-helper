@@ -4,10 +4,8 @@ update_mcps.py — Keep Python dependencies up to date.
 
 Checks PyPI for newer versions of key packages and upgrades them in the venv.
 
-Run standalone:
+Run standalone when you want to check/upgrade packages:
   python3 scripts/update_mcps.py
-
-Also called automatically at the start of canvas_refresh.py --weekly.
 """
 
 import json
@@ -23,6 +21,7 @@ from urllib.error import URLError
 PACKAGES = [
     "anthropic",
     "notebooklm-py",
+    "openpyxl",
     "python-docx",
     "pypdf",
     "python-pptx",
