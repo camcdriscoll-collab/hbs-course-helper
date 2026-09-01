@@ -7,15 +7,15 @@ Automated Canvas file sync, AI-generated case prep notes, reading downloads, wee
 | Script | Purpose |
 |--------|---------|
 | `canvas_refresh.py --daily` | Sync files + download readings + regenerate stale notes for sessions in the next 2 days. Runs every day at 5pm via launchd. |
-| `canvas_refresh.py --weekly` | Full 6-week sync, reading downloads, notes for 2-week window, weekly overview doc, calendar sync. Runs Sunday 8am via launchd. |
+| `canvas_refresh.py --weekly` | Full 6-week sync, reading downloads, notes for 2-week window, weekly overview doc, calendar sync, participation tracker refresh. Runs Sunday 8am via launchd. |
 | `canvas_readings.py YYMMDD COURSE` | Download all linked readings for a session on demand (HBSP cases, articles, YouTube stubs). |
 | `canvas_organize.py` | Route files to correct folders (PPTX → Slides/, etc.) and dedup to Trash. Runs automatically after every sync. |
 | `weekly_overview.py` | Generate `Overview/YYMMDD Overview.docx` — Mon–Fri breakdown of sessions and submissions for the upcoming week. |
 | `calendar_sync.py` | Sync Canvas assignment deadlines to Apple Calendar ("Canvas Assignments"). Idempotent. |
-| `canvas_sync.py` | Standalone full sync for all courses (manual fallback; same logic is built into `canvas_refresh.py`). |
+| `participation_tracker.py` | Build/refresh `Participation Tracker.xlsx` — one tab with all courses side by side, live spoke/entered rate per course. |
 | `cheat_sheet.py YYMMDD COURSE` | Generate a case prep notes `.docx` on demand for a specific session. |
 | `podcast_gen.py YYMMDD COURSE` | Generate a ~30-min NotebookLM audio overview on demand for a specific session. |
-| `update_mcps.py` | Check PyPI for dependency updates and upgrade automatically. |
+| `update_mcps.py` | Check PyPI for dependency updates and upgrade the venv. Run manually when needed. |
 
 ---
 
@@ -36,7 +36,8 @@ Automated Canvas file sync, AI-generated case prep notes, reading downloads, wee
 4. Organize folders + dedup to Trash
 5. Generate `Overview/YYMMDD Overview.docx` for the upcoming week
 6. Sync Canvas deadlines to Calendar
-7. *(If `--with-podcast`)* Open the overview doc → show numbered session list → prompt to skip any → generate podcasts
+7. Refresh `Participation Tracker.xlsx` (preserves any ratings already entered)
+8. *(If `--with-podcast`)* Open the overview doc → show numbered session list → prompt to skip any → generate podcasts
 
 ---
 
@@ -76,6 +77,23 @@ Notes are regenerated automatically when:
 - New reading files have been added since the last generation
 - The Canvas assignment description changed (professor edited it)
 - The master prompt or course refinement prompt was updated since last generation
+
+---
+
+## Participation Tracker
+
+`participation_tracker.py` (called automatically by `--weekly`) creates/refreshes `~/Desktop/Coursework/Participation Tracker.xlsx`:
+
+- One tab — all four courses (CATS, CFO, LME, LTV) side by side with a narrow separator between each
+- Each course has its own color scheme (teal / blue / red / purple)
+- **Row 1**: Full course name header
+- **Row 2**: Live participation rate — `spoke / entered` (updates as you fill in ratings)
+- **Row 3**: Column labels — Day | Case Title | Rating
+- **Row 4+**: One row per Canvas session, sorted by date
+
+Rating values: `ok`, `good`, `great`, `x` (didn't speak), or blank (not yet entered). Dropdown validation in every Rating cell. Conditional color-coding: great = green, good = light green, ok = yellow, x = gray.
+
+On refresh, existing ratings are preserved (keyed by course + session date), so Canvas title or date updates don't clobber your entries.
 
 ---
 
@@ -223,6 +241,9 @@ python3 scripts/canvas_readings.py --list 260902 LTV
 
 # Generate notes for a specific session
 python3 scripts/cheat_sheet.py 260902 LTV
+
+# Refresh the participation tracker manually
+python3 scripts/participation_tracker.py
 
 # Generate a podcast for a specific session
 python3 scripts/podcast_gen.py 260902 LTV
