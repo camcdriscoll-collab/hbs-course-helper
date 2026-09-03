@@ -6,8 +6,8 @@ Creates a ~20-minute NotebookLM audio overview for a class session.
 Output: YYMMDD CLASSCODE Podcast.m4a  (saved in the session folder)
 
 Usage:
-  python3 ~/Desktop/Coursework/claude/scripts/podcast_gen.py 260902 LTV
-  python3 ~/Desktop/Coursework/claude/scripts/podcast_gen.py 260908 CATS
+  ./.venv/bin/python scripts/podcast_gen.py 260902 LTV
+  ./.venv/bin/python scripts/podcast_gen.py 260908 CATS
 
 How it works:
   1. Finds the session folder and reading PDFs

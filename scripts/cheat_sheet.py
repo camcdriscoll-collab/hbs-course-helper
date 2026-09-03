@@ -6,11 +6,11 @@ Generates a case prep Notes file for a class session.
 Output: YYMMDD CLASSCODE Notes.md  (saved in the session folder)
 
 Usage:
-  python3 ~/Desktop/cheat_sheet.py 260902 LTV
-  python3 ~/Desktop/cheat_sheet.py 260908 CATS
+  ./.venv/bin/python scripts/cheat_sheet.py 260902 LTV
+  ./.venv/bin/python scripts/cheat_sheet.py 260908 CATS
 
 How it works:
-  1. Finds the session folder ~/Desktop/26F Coursework/LTV/260902 LTV/
+  1. Finds the session folder <COURSEWORK_ROOT>/LTV/260902 LTV/
   2. Reads any PDF/PPTX/DOCX files in that folder as reading materials
   3. Pulls the Canvas assignment description (discussion questions) for that session
   4. Combines with the master prompt + class-specific notes
@@ -28,6 +28,7 @@ import os
 import re
 import sys
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import urlencode
@@ -36,6 +37,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 # ── Path resolution (tolerates folder renames/moves) ─────────────────────────
 sys.path.insert(0, str(Path(__file__).parent))
 import path_config
+import ai_config
 _paths = path_config.resolve()
 
 DEST_ROOT   = _paths["coursework_root"]
@@ -44,8 +46,11 @@ ENV_FILE    = _paths["env_file"] or Path("/dev/null")
 _COURSES    = _paths["courses"]   # abbrev → {canvas_id, folder_path, refinement_prompt, ...}
 
 CANVAS_BASE = _paths["canvas_base"]
-BOSTON = timezone(timedelta(hours=-4))
-MODEL = "claude-sonnet-4-6"
+# Canvas due dates are wall-clock Boston time. ZoneInfo handles the EDT->EST
+# switch in early November; a fixed -4 offset silently shifted every date
+# bucket by an hour for the rest of the term.
+BOSTON = ZoneInfo("America/New_York")
+MODEL = ai_config.MODEL
 
 # Canvas course ID by abbreviation (derived from path_config)
 COURSE_IDS = {a: d["canvas_id"] for a, d in _COURSES.items()}
@@ -303,10 +308,10 @@ def main():
     )
     if message.stop_reason == "max_tokens":
         print("⚠ Output truncated (hit max_tokens limit) — consider removing some readings")
-    cost = (message.usage.input_tokens * 3 + message.usage.output_tokens * 15) / 1_000_000
+    cost = ai_config.estimate_cost(message.usage, MODEL)
     print(f"Tokens: {message.usage.input_tokens:,} in / {message.usage.output_tokens:,} out  (~${cost:.3f})")
 
-    result = message.content[0].text
+    result = ai_config.response_text(message)
 
     # Save canvas hash for staleness detection on future runs
     canvas_hash = ""

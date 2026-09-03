@@ -5,3 +5,4 @@ python-pptx>=0.6.21
 notebooklm-py[browser]>=0.3.1
 rookiepy>=0.1.0
 openpyxl>=3.1.0
+playwright>=1.40.0

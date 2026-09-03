@@ -29,6 +29,7 @@ Usage in other scripts:
 """
 
 import json
+import os
 import re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -37,10 +38,42 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 # ── Derived from this file's location — always correct after any rename/move ──
-SCRIPTS_DIR     = Path(__file__).resolve().parent       # claude/scripts/
-CLAUDE_DIR      = SCRIPTS_DIR.parent                    # claude/
+SCRIPTS_DIR     = Path(__file__).resolve().parent       # claude/scripts/  (or repo/scripts/)
+CLAUDE_DIR      = SCRIPTS_DIR.parent                    # claude/          (or repo/)
 PROMPTS_DIR     = CLAUDE_DIR / "prompts"                # claude/prompts/
-COURSEWORK_ROOT = CLAUDE_DIR.parent                     # Coursework/
+
+
+def _coursework_root() -> Path:
+    """
+    Where the course folders live.
+
+    By default this is the parent of the scripts folder, which assumes the
+    scripts have been copied to Coursework/claude/scripts/. Setting
+    COURSEWORK_ROOT (env var, or a line in .env) points them at the folder
+    directly, so a git clone can run in place with no second copy to keep
+    in sync.
+
+    Read before the full .env discovery below, which needs a root to search.
+    """
+    raw = os.getenv("COURSEWORK_ROOT", "")
+    if not raw:
+        for candidate in (CLAUDE_DIR / ".env", CLAUDE_DIR.parent / ".env"):
+            try:
+                if not candidate.exists():
+                    continue
+                for line in candidate.read_text().splitlines():
+                    line = line.strip()
+                    if line.startswith("COURSEWORK_ROOT") and "=" in line:
+                        raw = line.partition("=")[2].strip().strip('"').strip("'")
+                        break
+            except Exception:
+                continue
+            if raw:
+                break
+    return Path(raw).expanduser().resolve() if raw else CLAUDE_DIR.parent
+
+
+COURSEWORK_ROOT = _coursework_root()
 CONFIG_FILE     = CLAUDE_DIR / "canvas_config.json"
 MASTER_PROMPT   = PROMPTS_DIR / "cheat_sheet_prompt.md"
 

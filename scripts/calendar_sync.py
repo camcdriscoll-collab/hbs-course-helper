@@ -22,6 +22,7 @@ import json
 import subprocess
 import sys
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -30,7 +31,10 @@ import canvas_refresh as cr
 
 _paths   = path_config.resolve()
 _COURSES = _paths["courses"]
-BOSTON   = timezone(timedelta(hours=-4))
+# Canvas due dates are wall-clock Boston time. ZoneInfo handles the EDT->EST
+# switch in early November; a fixed -4 offset silently shifted every date
+# bucket by an hour for the rest of the term.
+BOSTON = ZoneInfo("America/New_York")
 
 CALENDAR_NAME = "Canvas Assignments"
 STATE_FILE    = Path.home() / ".canvas_calendar_state.json"

@@ -21,6 +21,7 @@ import os
 import re
 import sys
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -34,6 +35,7 @@ import participation_tracker
 # ── Path resolution (tolerates folder renames/moves) ─────────────────────────
 sys.path.insert(0, str(Path(__file__).parent))
 import path_config
+import ai_config
 _paths = path_config.resolve()
 
 DEST_ROOT    = _paths["coursework_root"]
@@ -46,8 +48,11 @@ COURSE_NAMES = path_config.COURSE_NAMES
 COURSES = {a: d["canvas_id"] for a, d in _COURSES.items() if d["folder_path"]}
 
 CANVAS_BASE = _paths["canvas_base"]
-BOSTON = timezone(timedelta(hours=-4))   # EDT — fall term Sep–Nov
-MODEL  = "claude-sonnet-4-6"
+# Canvas due dates are wall-clock Boston time. ZoneInfo handles the EDT->EST
+# switch in early November; a fixed -4 offset silently shifted every date
+# bucket by an hour for the rest of the term.
+BOSTON = ZoneInfo("America/New_York")
+MODEL  = ai_config.MODEL
 
 READING_EXTS = {".pdf", ".docx", ".pptx", ".doc", ".ppt", ".txt"}
 SLIDE_EXTS   = {".pptx", ".ppt"}   # always routed to General/Slides/
@@ -490,6 +495,7 @@ def notes_are_stale(session_dir: Path, abbrev: str, date_str: str,
         if f.is_file()
         and f.suffix.lower() in READING_EXTS
         and "Notes" not in f.name
+        and "(skipped)" not in f.name
     ]
     for f in reading_files:
         if f.stat().st_mtime > notes_mtime:
@@ -523,7 +529,8 @@ def generate_notes(session: dict):
     # Sort: largest PDFs first (proxy for "main case"), non-PDFs after
     reading_files = sorted(
         (f for f in session_dir.iterdir()
-         if f.is_file() and f.suffix.lower() in READING_EXTS and "Notes" not in f.name),
+         if f.is_file() and f.suffix.lower() in READING_EXTS
+         and "Notes" not in f.name and "(skipped)" not in f.name),
         key=lambda f: (-f.stat().st_size if f.suffix.lower() == ".pdf" else 0, f.name),
     )
 
@@ -638,9 +645,9 @@ def generate_notes(session: dict):
     )
     if msg.stop_reason == "max_tokens":
         print(f"    ⚠ Output truncated (hit max_tokens limit) — consider splitting readings")
-    cost = (msg.usage.input_tokens * 3 + msg.usage.output_tokens * 15) / 1_000_000
+    cost = ai_config.estimate_cost(msg.usage, MODEL)
     print(f"    Tokens: {msg.usage.input_tokens:,} in / {msg.usage.output_tokens:,} out  (~${cost:.3f})")
-    result = msg.content[0].text
+    result = ai_config.response_text(msg)
 
     # Save canvas hash for staleness detection on future runs
     canvas_hash = ""
@@ -656,7 +663,8 @@ def generate_notes(session: dict):
     if assignment:
         metadata["Canvas"] = assignment["name"]
     if reading_files:
-        included = [f.name for f in reading_files if f.name not in skipped]
+        skipped_names = {entry.split(" (")[0] for entry in skipped}
+        included = [f.name for f in reading_files if f.name not in skipped_names]
         if included:
             metadata["Readings"] = ", ".join(included)
     if skipped:

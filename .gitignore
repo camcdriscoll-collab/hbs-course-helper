@@ -1,4 +1,24 @@
+# Secrets — never commit
 .env
-__pycache__/
-.venv/
+.env.local
+.env.*
+!.env.example
+
+# Generated config and state
 canvas_config.json
+.notes_meta.json
+
+# Logs from the scheduled runs
+*.log
+
+# Generated launchd jobs (setup.sh writes these from launchd/*.template)
+launchd/*.plist
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# macOS
+.DS_Store

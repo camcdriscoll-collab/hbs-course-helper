@@ -62,14 +62,14 @@ For every session in the notes window, the sync automatically downloads all read
 | LinkedIn / social / mailto | Skip silently |
 | `instructure.com` Canvas files | Skip (already handled by the Canvas file sync) |
 
-**Oversized files:** If a PDF exceeds the 50-page limit or the 800k-token context budget, it is downloaded to the session folder but excluded from the AI notes. A `{name} (skipped).txt` stub is written next to it so the exclusion is visible. Delete the stub and re-run to force inclusion.
+**Oversized files:** If a PDF exceeds the 50-page limit or the 800k-token context budget, it is downloaded to the session folder but excluded from the AI notes. A `{name} (skipped).txt` stub is written next to it so the exclusion is visible. To force inclusion, raise `PDF_PAGE_LIMIT` / `MAX_PDF_TOKEN_BUDGET` in `scripts/canvas_refresh.py`, delete the Notes file, and re-run — deleting the stub alone does nothing.
 
 **File type safety:** If an HBSP download returns a non-PDF (e.g. an Excel exhibit named `.pdf`), the file is automatically renamed to the correct extension (`.docx`, `.xlsx`, etc.) before it reaches the notes generator.
 
 Debug / preview:
 ```bash
-python3 scripts/canvas_readings.py --list 260908 LTV   # show links without downloading
-python3 scripts/canvas_readings.py 260908 LTV          # download for one session
+./.venv/bin/python scripts/canvas_readings.py --list 260908 LTV   # show links without downloading
+./.venv/bin/python scripts/canvas_readings.py 260908 LTV          # download for one session
 ```
 
 ---
@@ -192,117 +192,86 @@ Coursework/
 
 ## Setup
 
-### 1. Clone and install
+**New here? Read [SETUP.md](SETUP.md) instead** — it walks through the same
+steps assuming no terminal experience, and explains where each credential
+comes from.
+
+The short version, on a Mac:
 
 ```bash
-git clone https://github.com/camcdriscoll-collab/hbs-course-helper.git
-cd hbs-course-helper
-python3.12 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+git clone https://github.com/camcdriscoll-collab/hbs-course-helper.git ~/hbs-course-helper
+cd ~/hbs-course-helper
+./setup.sh                # venv, dependencies, headless Chromium, blank .env
+open -e .env              # fill in your four values
+./.venv/bin/python scripts/canvas_refresh.py --daily
 ```
 
-> Python 3.12+ required. Use `python3.12` explicitly if your system default is older.
+Then, optionally, `./setup.sh --schedule` to install the 5pm daily and Sunday
+8am `launchd` jobs.
 
-### 2. Add credentials
+### The four values in `.env`
 
-Create `.env` in the repo root (gitignored):
+See [`.env.example`](.env.example) for the annotated template.
 
-```
-CANVAS_API_TOKEN=your_canvas_token_here
-CANVAS_BASE_URL=https://yourschool.instructure.com
-ANTHROPIC_API_KEY=sk-ant-...
-```
+| Key | Where it comes from |
+|-----|---------------------|
+| `CANVAS_API_TOKEN` | Canvas → Account → Settings → **+ New Access Token** |
+| `CANVAS_BASE_URL` | Your Canvas domain, e.g. `https://canvas.harvard.edu` — no trailing slash, no `/api/v1` |
+| `ANTHROPIC_API_KEY` | https://console.anthropic.com → Settings → API keys |
+| `COURSEWORK_ROOT` | The folder holding your per-course subfolders, e.g. `~/Desktop/Coursework` |
 
-**Getting a Canvas token:** Canvas → Account → Settings → New Access Token. Give it any name and no expiry.
+> **An `ANTHROPIC_API_KEY` is not a claude.ai login.** Claude for Education, a
+> Claude Pro subscription, and a claude.ai account are the chat product. This
+> tool uses the developer API, which is billed per token from the Console and
+> is a separate account and separate bill. If your school runs an organization
+> in the Console, ask about joining it before adding a personal card.
 
-**Canvas URL:** Use your school's Canvas domain — e.g. `https://hbs.instructure.com`, `https://canvas.stanford.edu`, `https://canvas.instructure.com`.
+> Courses are auto-discovered from Canvas on the first run. There is no course
+> ID configuration to fill in.
 
-> Courses are auto-discovered from Canvas on the first run. No manual course ID configuration is needed.
-
-### 3. Copy scripts to working directory
-
-The launchd jobs run from `Coursework/claude/scripts/` (inside your Coursework folder). Copy the scripts there:
-
-```bash
-cp scripts/* ~/Desktop/Coursework/claude/scripts/
-cp -r prompts/ ~/Desktop/Coursework/claude/prompts/
-```
-
-Adjust the path if your Coursework folder is somewhere other than `~/Desktop/Coursework/`.
-
-### 4. Set up Apple Calendar (first time only)
-
-1. Create a calendar named exactly **Canvas Assignments** in Apple Calendar (iCloud and Google Calendar both work)
-2. Run `python3 scripts/calendar_sync.py` to populate it with all upcoming deadlines
-
-### 5. Authenticate NotebookLM (for podcasts)
-
-```bash
-.venv/bin/notebooklm login
-```
-
-Opens a browser. Sign in to your Google account. Cookies are cached at `~/.notebooklm/profiles/default/` and reused automatically. Only needed once.
-
-### 6. Schedule automated runs (macOS launchd)
-
-Edit the two plist files in `~/Library/LaunchAgents/` to replace the Python path and script path with your own:
-
-- Python: output of `.venv/bin/python3 --version` (use that full path)
-- Script: full path to `canvas_refresh.py` inside your Coursework folder
-
-Then load them:
-
-```bash
-launchctl load ~/Library/LaunchAgents/com.canvas-course-helper.daily.plist
-launchctl load ~/Library/LaunchAgents/com.canvas-course-helper.weekly.plist
-```
-
-**Daily plist** runs `canvas_refresh.py --daily` every day at **5pm**.
-**Weekly plist** runs `canvas_refresh.py --weekly` every **Sunday at 8am**.
-
-Logs are written next to the scripts: `canvas_refresh_daily.log` and `canvas_refresh_weekly.log`.
-
----
+Setting `COURSEWORK_ROOT` means the scripts run in place from this clone. If
+you leave it unset, they fall back to assuming they live at
+`Coursework/claude/scripts/` and treat the grandparent folder as the root.
 
 ## Usage
 
 ```bash
 # Daily sync (next 2 days)
-python3 scripts/canvas_refresh.py --daily
+./.venv/bin/python scripts/canvas_refresh.py --daily
 
 # Weekly sync + overview + calendar
-python3 scripts/canvas_refresh.py --weekly
+./.venv/bin/python scripts/canvas_refresh.py --weekly
 
 # Weekly with interactive podcast confirmation
-python3 scripts/canvas_refresh.py --weekly --with-podcast
+./.venv/bin/python scripts/canvas_refresh.py --weekly --with-podcast
 
 # Download readings for a specific session
-python3 scripts/canvas_readings.py 260902 LTV
+./.venv/bin/python scripts/canvas_readings.py 260902 LTV
 
 # List links for a session without downloading
-python3 scripts/canvas_readings.py --list 260902 LTV
+./.venv/bin/python scripts/canvas_readings.py --list 260902 LTV
 
 # Generate notes for a specific session on demand
-python3 scripts/cheat_sheet.py 260902 LTV
+./.venv/bin/python scripts/cheat_sheet.py 260902 LTV
 
 # Refresh the participation tracker manually
-python3 scripts/participation_tracker.py
+./.venv/bin/python scripts/participation_tracker.py
 
 # Generate a podcast for a specific session
-python3 scripts/podcast_gen.py 260902 LTV
+./.venv/bin/python scripts/podcast_gen.py 260902 LTV
 
 # Generate the weekly overview doc manually
-python3 scripts/weekly_overview.py
+./.venv/bin/python scripts/weekly_overview.py
 
 # Sync calendar deadlines manually
-python3 scripts/calendar_sync.py
-python3 scripts/calendar_sync.py --dry-run   # preview without creating events
+./.venv/bin/python scripts/calendar_sync.py
+./.venv/bin/python scripts/calendar_sync.py --dry-run   # preview without creating events
 
 # Organize and dedup folders
-python3 scripts/canvas_organize.py
+./.venv/bin/python scripts/canvas_organize.py
 
 # Check for dependency updates
-python3 scripts/update_mcps.py
+./.venv/bin/python scripts/update_mcps.py
 ```
 
 ---
@@ -322,4 +291,21 @@ python3 scripts/update_mcps.py
 
 ## Notes on cost
 
-Notes generation calls the Claude API (Sonnet). A typical session with 3–4 PDFs costs $0.30–$0.80 depending on reading length. The daily run only regenerates notes that are actually stale, so costs are low after the initial setup run.
+Notes generation calls the Claude API. A typical session with 3–4 PDFs costs $0.30–$0.80 depending on reading length. The daily run only regenerates notes that are actually stale, so costs are low after the initial setup run.
+
+The model and its per-token prices live in [`scripts/ai_config.py`](scripts/ai_config.py) — one place to change both, so the printed cost estimate stays honest. Default is `claude-sonnet-4-6`; swap in `claude-haiku-4-5` to cut cost or `claude-opus-5` for harder analytical courses.
+
+---
+
+## Sharing this with classmates
+
+The repo is public and MIT licensed — anyone can clone it. Two things worth saying out loud when you pass it along:
+
+- **Everyone brings their own keys.** Canvas tokens and Anthropic keys are per-person and go in a gitignored `.env`. Nobody shares an account, and nobody should paste a token into a chat.
+- **Course materials stay put.** The reading downloader fetches HBSP cases and articles through your own coursepack access, to your own machine. Those PDFs are licensed to you individually — don't redistribute the downloaded files, and don't commit a Coursework folder to git.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

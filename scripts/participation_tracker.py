@@ -2,7 +2,7 @@
 """
 participation_tracker.py — HBS participation tracker spreadsheet.
 
-Creates/refreshes: ~/Desktop/Coursework/Participation Tracker.xlsx
+Creates/refreshes: <COURSEWORK_ROOT>/Participation Tracker.xlsx
   - Single worksheet ("Participation")
   - CATS | CFO | LME | LTV side by side, each a different color
   - Narrow separator column between each course group
@@ -28,6 +28,7 @@ import os
 import re
 import sys
 from datetime import datetime, timezone, timedelta, date as _date
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import urlencode
@@ -46,7 +47,10 @@ COURSE_NAMES = path_config.COURSE_NAMES
 
 COURSES      = {a: d["canvas_id"] for a, d in _COURSES.items() if d["folder_path"]}
 CANVAS_BASE  = _paths["canvas_base"]
-BOSTON       = timezone(timedelta(hours=-4))
+# Canvas due dates are wall-clock Boston time. ZoneInfo handles the EDT->EST
+# switch in early November; a fixed -4 offset silently shifted every date
+# bucket by an hour for the rest of the term.
+BOSTON = ZoneInfo("America/New_York")
 
 COURSE_ORDER    = ["CATS", "CFO", "LME", "LTV"]
 COLS_PER_COURSE = 3
