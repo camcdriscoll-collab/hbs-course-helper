@@ -22,3 +22,6 @@ venv/
 
 # macOS
 .DS_Store
+
+# Local launchd backups taken during setup — machine-specific paths
+.launchd-backup/

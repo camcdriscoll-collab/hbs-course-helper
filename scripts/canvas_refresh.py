@@ -110,7 +110,14 @@ def canvas_get(path: str, params: dict | None = None) -> list | dict:
         try:
             resp = _opener.open(req, timeout=30)
         except HTTPError as e:
-            print(f"    HTTP {e.code}: {url}")
+            if e.code in (401, 403):
+                # Distinct from a transient failure: the token cannot read this
+                # course at all. Usually an enrolment change or a revoked token,
+                # not something a retry or a code change will fix.
+                print(f"    HTTP {e.code} — no access to this course "
+                      f"(enrolment ended, or token revoked): {url}")
+            else:
+                print(f"    HTTP {e.code}: {url}")
             return []
         data = json.loads(resp.read())
         if isinstance(data, list):

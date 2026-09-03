@@ -261,8 +261,19 @@ def _should_refresh(cfg: dict) -> bool:
 
 def _discover_courses(token: str, base_url: str, cfg: dict) -> "tuple[dict, bool]":
     """
-    Fetch enrolled courses from Canvas and merge with existing config.
-    Preserves previously-resolved folder_name values across refreshes.
+    Fetch enrolled courses from Canvas and merge them into the existing config.
+
+    Merging, not replacing: Canvas has been observed returning a partial
+    enrolment list (10 courses one hour, 6 the next, with no `rel="next"` page
+    to follow). Rebuilding the map from a single response deletes every course
+    missing from it, and a dropped course stops syncing silently — taking a
+    term of session folders out of scope with it. Removing a course you have
+    genuinely dropped is a one-line edit to canvas_config.json; losing one
+    without noticing is not.
+
+    Honours `abbrev_overrides` in canvas_config.json — {canvas_id: "ABBREV"} —
+    so a course can use your folder name rather than the code Canvas reports.
+
     Returns (courses_dict, changed).
     """
     print("  [paths] Refreshing course list from Canvas...")
@@ -270,26 +281,59 @@ def _discover_courses(token: str, base_url: str, cfg: dict) -> "tuple[dict, bool
     if not raw:
         return cfg.get("courses", {}), False
 
-    existing = cfg.get("courses", {})
-    taken: set = set()
-    new_courses: dict = {}
+    existing  = cfg.get("courses", {})
+    overrides = {str(k): v for k, v in cfg.get("abbrev_overrides", {}).items()}
+
+    merged: dict = {a: dict(e) for a, e in existing.items()}
+    by_id: dict  = {str(e["canvas_id"]): a
+                    for a, e in existing.items() if e.get("canvas_id")}
+    taken: set   = set(merged)   # so a new course can't take a known abbrev
+    seen: list   = []
 
     for c in raw:
         if not isinstance(c, dict) or "id" not in c:
             continue
-        abbrev = _abbrev_from_course(c, taken)
+        cid = str(c["id"])
+        # An explicit override wins, then the abbrev this course already uses,
+        # then a freshly derived one deduped against everything known.
+        abbrev = overrides.get(cid) or by_id.get(cid) or _abbrev_from_course(c, taken)
         taken.add(abbrev)
-        # Preserve folder_name if we've already resolved it
-        folder_name = existing.get(abbrev, {}).get("folder_name")
-        new_courses[abbrev] = {
+        merged[abbrev] = {
             "canvas_id":   c["id"],
             "full_name":   _clean_course_name(c.get("name", abbrev)),
-            "folder_name": folder_name,
+            "folder_name": merged.get(abbrev, {}).get("folder_name"),
         }
+        seen.append(abbrev)
 
-    label = ", ".join(sorted(new_courses))
-    print(f"  [paths] Found {len(new_courses)} enrolled course(s): {label}")
-    return new_courses, True
+    # Apply overrides across the whole map rather than only this response, so a
+    # course Canvas didn't return still ends up under the abbrev you chose.
+    for abbrev in list(merged):
+        cid  = str(merged[abbrev].get("canvas_id"))
+        want = overrides.get(cid)
+        if not want or want == abbrev:
+            continue
+        if want not in merged:
+            merged[want] = merged.pop(abbrev)
+        elif str(merged[want].get("canvas_id")) == cid:
+            # This response already wrote the course under `want`; keep that
+            # entry but don't lose a folder we had already resolved.
+            if not merged[want].get("folder_name"):
+                merged[want]["folder_name"] = merged[abbrev].get("folder_name")
+            del merged[abbrev]
+        else:
+            print(f"  [paths] WARNING: abbrev_overrides wants {abbrev} → {want}, "
+                  f"but {want} is already course {merged[want].get('canvas_id')} — skipping")
+            continue
+        if abbrev in seen:
+            seen[seen.index(abbrev)] = want
+        print(f"  [paths] {abbrev} → {want} (abbrev_overrides)")
+
+    print(f"  [paths] Found {len(seen)} enrolled course(s): {', '.join(sorted(seen))}")
+    held = sorted(set(merged) - set(seen))
+    if held:
+        print(f"  [paths] Canvas did not return {len(held)} known course(s) this time; "
+              f"keeping them: {', '.join(held)}")
+    return merged, True
 
 # ── Course folder resolution ──────────────────────────────────────────────────
 
@@ -396,10 +440,14 @@ def resolve() -> dict:
     COURSE_NAMES.clear()
     courses: dict = {}
 
+    ignored = {str(i) for i in cfg.get("ignored_courses", [])}
+
     for abbrev, entry in cfg.get("courses", {}).items():
         canvas_id = entry.get("canvas_id")
         if not canvas_id:
             continue
+        if str(canvas_id) in ignored:
+            continue   # listed in ignored_courses — e.g. an admin or kickoff shell
 
         cached_name = entry.get("folder_name")
         folder_name = _find_course_folder(abbrev, cached_name)
@@ -407,6 +455,23 @@ def resolve() -> dict:
             print(f"  [paths] {abbrev}: folder {cached_name!r} → {folder_name!r}")
             cfg["courses"][abbrev]["folder_name"] = folder_name
             changed = True
+
+        # A course with no folder used to be dropped from every loop in
+        # canvas_refresh, which meant it never got a folder created and so could
+        # never resolve on a later run either — a silent, permanent dead end.
+        # Create the folder so the course joins the sync from here on.
+        if folder_name is None:
+            new_dir = COURSEWORK_ROOT / abbrev
+            try:
+                new_dir.mkdir(parents=True, exist_ok=True)
+                folder_name = abbrev
+                cfg["courses"][abbrev]["folder_name"] = folder_name
+                changed = True
+                print(f"  [paths] {abbrev}: created course folder {new_dir}")
+                print(f"  [paths]   (add {canvas_id} to \"ignored_courses\" in "
+                      f"canvas_config.json to skip this course instead)")
+            except OSError as e:
+                print(f"  [paths] WARNING: could not create folder for {abbrev}: {e}")
 
         full_name = entry.get("full_name", abbrev)
         code = abbrev.replace(" ", "_")
