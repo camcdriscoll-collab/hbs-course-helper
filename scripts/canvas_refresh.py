@@ -45,7 +45,7 @@ COURSE_NAMES = path_config.COURSE_NAMES
 # Build flat dicts for callers that need them
 COURSES = {a: d["canvas_id"] for a, d in _COURSES.items() if d["folder_path"]}
 
-CANVAS_BASE = "https://hbs.instructure.com/api/v1"
+CANVAS_BASE = _paths["canvas_base"]
 BOSTON = timezone(timedelta(hours=-4))   # EDT — fall term Sep–Nov
 MODEL  = "claude-sonnet-4-6"
 

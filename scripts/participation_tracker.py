@@ -45,7 +45,7 @@ _COURSES     = _paths["courses"]
 COURSE_NAMES = path_config.COURSE_NAMES
 
 COURSES      = {a: d["canvas_id"] for a, d in _COURSES.items() if d["folder_path"]}
-CANVAS_BASE  = "https://hbs.instructure.com/api/v1"
+CANVAS_BASE  = _paths["canvas_base"]
 BOSTON       = timezone(timedelta(hours=-4))
 
 COURSE_ORDER    = ["CATS", "CFO", "LME", "LTV"]

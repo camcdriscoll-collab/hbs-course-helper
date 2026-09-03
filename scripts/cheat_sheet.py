@@ -43,7 +43,7 @@ PROMPT_FILE = _paths["master_prompt"]
 ENV_FILE    = _paths["env_file"] or Path("/dev/null")
 _COURSES    = _paths["courses"]   # abbrev → {canvas_id, folder_path, refinement_prompt, ...}
 
-CANVAS_BASE = "https://hbs.instructure.com/api/v1"
+CANVAS_BASE = _paths["canvas_base"]
 BOSTON = timezone(timedelta(hours=-4))
 MODEL = "claude-sonnet-4-6"
 
