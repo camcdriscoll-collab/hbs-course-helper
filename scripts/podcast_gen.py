@@ -32,6 +32,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import path_config
 import canvas_refresh as _cr
+from notebooklm import ArtifactType
+from notebooklm.exceptions import ArtifactInProgressTimeoutError
 
 _paths  = path_config.resolve()
 DEST_ROOT = _paths["coursework_root"]
@@ -161,24 +163,50 @@ async def _generate(date_str: str, abbrev: str):
         # Generate
         instructions = _build_instructions(reading_files, abbrev)
         has_supplemental = len(reading_files) > 1
-        print(f"\nGenerating audio overview (~5–15 min)"
-              f"{' [with supplemental frameworks]' if has_supplemental else ''}...", flush=True)
-        status = await client.artifacts.generate_audio(
-            nb.id,
-            instructions=instructions,
-        )
-        print(f"  Task: {status.task_id}")
+        # A render that outran the poll ceiling keeps going on NotebookLM's side.
+        # Collect a finished one rather than paying for the same audio twice —
+        # without this, every retry queued a second render and waited again.
+        existing_audio = None
+        try:
+            for art in await client.artifacts.list_artifacts(nb.id):
+                if art.kind == ArtifactType.AUDIO and art.is_completed:
+                    existing_audio = art
+                    break
+        except Exception as e:
+            print(f"  (could not list existing artifacts: {e})")
 
-        # Wait
-        def _on_change(s):
-            print(f"  → {s.status}")
+        if existing_audio is not None:
+            print("\n  Audio from an earlier run has finished — collecting it "
+                  "instead of generating again.")
+        else:
+            print(f"\nGenerating audio overview (~5–15 min)"
+                  f"{' [with supplemental frameworks]' if has_supplemental else ''}...",
+                  flush=True)
+            status = await client.artifacts.generate_audio(
+                nb.id,
+                instructions=instructions,
+            )
+            print(f"  Task: {status.task_id}")
 
-        await client.artifacts.wait_for_completion(
-            nb.id,
-            status.task_id,
-            timeout=1200.0,      # 20-minute ceiling
-            on_status_change=_on_change,
-        )
+            def _on_change(s):
+                print(f"  → {s.status}")
+
+            try:
+                await client.artifacts.wait_for_completion(
+                    nb.id,
+                    status.task_id,
+                    # A six-source notebook regularly runs past 20 minutes. The
+                    # old ceiling abandoned finished work and reported failure.
+                    timeout=2700.0,
+                    on_status_change=_on_change,
+                )
+            except ArtifactInProgressTimeoutError:
+                print(f"\n  Still rendering after 45 min. NotebookLM keeps going "
+                      f"without us — re-run this command later and it will "
+                      f"download the finished audio:")
+                print(f"    ./.venv/bin/python scripts/podcast_gen.py "
+                      f"{date_str} {abbrev}")
+                return
 
         # Download
         print(f"  ↓ Downloading...")
