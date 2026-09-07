@@ -32,7 +32,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import path_config
 import canvas_refresh as _cr
-from notebooklm import ArtifactType
 from notebooklm.exceptions import ArtifactInProgressTimeoutError
 
 _paths  = path_config.resolve()
@@ -168,16 +167,17 @@ async def _generate(date_str: str, abbrev: str):
         # without this, every retry queued a second render and waited again.
         existing_audio = None
         try:
-            for art in await client.artifacts.list_artifacts(nb.id):
-                if art.kind == ArtifactType.AUDIO and art.is_completed:
+            for art in await client.artifacts.list_audio(nb.id):
+                if art.is_completed:
                     existing_audio = art
                     break
         except Exception as e:
-            print(f"  (could not list existing artifacts: {e})")
+            print(f"  (could not list existing audio: {e})")
 
         if existing_audio is not None:
-            print("\n  Audio from an earlier run has finished — collecting it "
-                  "instead of generating again.")
+            mins = int((existing_audio.duration_seconds or 0) // 60)
+            print(f"\n  Audio from an earlier run has finished ({mins} min) — "
+                  f"collecting it instead of generating again.")
         else:
             print(f"\nGenerating audio overview (~5–15 min)"
                   f"{' [with supplemental frameworks]' if has_supplemental else ''}...",
