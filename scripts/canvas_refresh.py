@@ -20,6 +20,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -109,6 +110,11 @@ def canvas_get(path: str, params: dict | None = None) -> list | dict:
         req = Request(url, headers={"Authorization": f"Bearer {token}"})
         try:
             resp = _opener.open(req, timeout=30)
+        except URLError as e:
+            # No network (asleep laptop, captive wifi). Previously uncaught, so
+            # one unreachable moment ended the whole scheduled run in a traceback.
+            print(f"    Network error, skipping this request: {e.reason}")
+            return []
         except HTTPError as e:
             if e.code in (401, 403):
                 # Distinct from a transient failure: the token cannot read this
@@ -715,6 +721,36 @@ def generate_podcast_for_session(session: dict):
         print(f"    ✗ Podcast generation failed: {e}")
 
 
+# ── Connectivity ──────────────────────────────────────────────────────────────
+
+def wait_for_canvas(attempts: int = 5, delay: int = 30) -> bool:
+    """
+    Return True once Canvas answers, False if it never does.
+
+    launchd fires at 5pm whether or not the Mac is awake and on wifi; a machine
+    that has just woken often has no DNS for a few seconds. Waiting a little
+    turns a wasted run into a normal one.
+    """
+    from urllib.parse import urlparse
+    host = urlparse(CANVAS_BASE).netloc
+    for attempt in range(1, attempts + 1):
+        try:
+            req = Request(f"{CANVAS_BASE}/users/self",
+                          headers={"Authorization": f"Bearer {cfg('CANVAS_API_TOKEN')}"})
+            _opener.open(req, timeout=15)
+            return True
+        except HTTPError:
+            return True          # reachable — auth problems surface later, per course
+        except (URLError, OSError) as e:
+            if attempt == attempts:
+                print(f"  Cannot reach {host} after {attempts} attempts: {e}")
+                return False
+            print(f"  {host} unreachable ({e}) — retrying in {delay}s "
+                  f"[{attempt}/{attempts}]")
+            time.sleep(delay)
+    return False
+
+
 # ── Modes ─────────────────────────────────────────────────────────────────────
 
 def run_daily(skip_prompt_regen: bool = False, with_podcast: bool = False):
@@ -916,6 +952,11 @@ def main():
                         help="Also generate NotebookLM podcasts for sessions within the notes "
                              "window (requires notebooklm login; adds ~10 min per session)")
     args = parser.parse_args()
+
+    if not wait_for_canvas():
+        print("  Skipping this run — nothing was changed. The next scheduled run "
+              "will pick up whatever was missed.")
+        return
 
     if args.daily:
         run_daily(skip_prompt_regen=args.skip_prompt_regen, with_podcast=args.with_podcast)

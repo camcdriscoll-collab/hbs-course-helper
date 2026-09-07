@@ -30,7 +30,7 @@ import sys
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 from pathlib import Path
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
@@ -111,8 +111,15 @@ def canvas_get(path: str, params: dict | None = None) -> list | dict:
         req = Request(url, headers={"Authorization": f"Bearer {canvas_token}"})
         try:
             resp = _opener.open(req, timeout=30)
+        except URLError as e:
+            print(f"  Network error reaching Canvas: {e.reason}")
+            return []
         except HTTPError as e:
-            print(f"  Canvas HTTP {e.code}: {url}")
+            if e.code in (401, 403):
+                print(f"  Canvas HTTP {e.code} — no access to this course "
+                      f"(enrolment ended, or token revoked): {url}")
+            else:
+                print(f"  Canvas HTTP {e.code}: {url}")
             return []
         data = json.loads(resp.read())
         if isinstance(data, list):
