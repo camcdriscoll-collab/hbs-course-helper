@@ -58,11 +58,13 @@ MODEL  = ai_config.MODEL
 READING_EXTS = {".pdf", ".docx", ".pptx", ".doc", ".ppt", ".txt"}
 SLIDE_EXTS   = {".pptx", ".ppt"}   # always routed to General/Slides/
 
-# PDF token budget: Claude processes each PDF page as an image (~200K tokens/MB).
-# Budget 800K tokens for PDFs, leaving headroom for prompt + response.
-PDF_TOKENS_PER_MB = 200_000
-MAX_PDF_TOKEN_BUDGET = 800_000
-PDF_PAGE_LIMIT = 50   # PDFs over this page count are skipped; delete Notes and re-run to override
+# PDF budget. Token cost is measured with the free count_tokens endpoint rather
+# than guessed from file size: the old 200k-tokens-per-MB rule over-counted a
+# scanned case by ~8x (a 23-page case measures 45k, was estimated at 372k) and
+# silently dropped readings that fit with room to spare.
+PDF_TOKENS_PER_MB = 200_000          # kept for callers; no longer used here
+MAX_PDF_TOKEN_BUDGET = 700_000       # Sonnet holds 1M; leave room for prompt + output
+PDF_PAGE_LIMIT = 150  # a genuinely outsized document, not a normal long case
 
 # ── Env / config ──────────────────────────────────────────────────────────────
 
@@ -582,6 +584,21 @@ def generate_notes(session: dict):
     api_key = require("ANTHROPIC_API_KEY")
     client  = ant.Anthropic(api_key=api_key)
 
+    # Drop byte-identical copies of the same reading. Canvas sometimes attaches a
+    # file both to the assignment and to the class folder, and paying to send the
+    # same case twice also costs context the model could spend on real material.
+    unique_files = []
+    seen_digests: dict[str, Path] = {}
+    for f in reading_files:
+        digest = hashlib.md5(f.read_bytes()).hexdigest()
+        first = seen_digests.get(digest)
+        if first is not None:
+            print(f"    - Duplicate of {first.name}, sending once: {f.name}")
+            continue
+        seen_digests[digest] = f
+        unique_files.append(f)
+    reading_files = unique_files
+
     content: list[dict] = []
     skipped: list[str] = []
     pdf_token_used = 0
@@ -592,62 +609,62 @@ def generate_notes(session: dict):
                 pages = pdf_page_count(f)
                 if pages > PDF_PAGE_LIMIT:
                     reason = f"too long ({pages} pages, limit {PDF_PAGE_LIMIT})"
-                    print(f"    ⚠ Skipped ({pages}p > {PDF_PAGE_LIMIT}-page limit): {f.name}")
+                    print(f"    WARN Skipped ({pages}p > {PDF_PAGE_LIMIT}-page limit): {f.name}")
                     skipped.append(f"{f.name} ({pages}p, too long)")
                     _write_skip_stub(f, reason)
                     content.append({"type": "text", "text": (
                         f"=== {f.name} ===\n"
                         f"[Skipped: {pages} pages exceeds the {PDF_PAGE_LIMIT}-page limit. "
-                        f"Delete the Notes file and re-run to force inclusion.]"
-                    )})
-                    continue
-                size_mb = f.stat().st_size / (1024 * 1024)
-                estimated_tokens = int(size_mb * PDF_TOKENS_PER_MB)
-                if pdf_token_used + estimated_tokens > MAX_PDF_TOKEN_BUDGET:
-                    reason = f"token budget (~{estimated_tokens//1000}k tokens / {size_mb:.1f} MB)"
-                    print(f"    ⚠ Skipped (token budget, ~{estimated_tokens//1000}k tokens): {f.name}")
-                    skipped.append(f.name)
-                    _write_skip_stub(f, reason)
-                    content.append({"type": "text", "text": (
-                        f"=== {f.name} ===\n"
-                        f"[File omitted to stay within context limit (~{size_mb:.1f} MB / "
-                        f"~{estimated_tokens//1000}k tokens). Summarize from Canvas description.]"
+                        f"Raise PDF_PAGE_LIMIT, delete the Notes file and re-run to include it.]"
                     )})
                     continue
                 # Validate it's actually a PDF before sending to Claude
                 raw = f.read_bytes()
                 if not raw[:4].startswith(b"%PDF"):
-                    print(f"    ⚠ Skipped (not a valid PDF, got {raw[:4]!r}): {f.name}")
+                    print(f"    WARN Skipped (not a valid PDF, got {raw[:4]!r}): {f.name}")
                     skipped.append(f.name)
                     content.append({"type": "text", "text": (
                         f"=== {f.name} ===\n"
-                        f"[File has wrong format — not a valid PDF. Summarize from Canvas description.]"
+                        f"[File has wrong format - not a valid PDF. Summarize from Canvas description.]"
                     )})
                     continue
-                pdf_token_used += estimated_tokens
-                data = base64.standard_b64encode(raw).decode()
-                content.append({
+                block = {
                     "type": "document",
-                    "source": {"type": "base64", "media_type": "application/pdf", "data": data},
+                    "source": {"type": "base64",
+                               "media_type": "application/pdf",
+                               "data": base64.standard_b64encode(raw).decode()},
                     "title": f.name,
-                })
-            elif f.suffix.lower() in {".pptx", ".ppt"}:
-                # Binary slide files — mention but don't read raw bytes
-                print(f"    – Slides (listed but not read as text): {f.name}")
-                skipped.append(f.name)
-                content.append({"type": "text", "text": (
-                    f"=== {f.name} ===\n"
-                    "[Slide deck — not included as raw text. "
-                    "Summarize from Canvas description and any PDFs.]"
-                )})
+                }
+                # Measured, not guessed. The old size-based rule over-counted a
+                # scanned case by ~8x and dropped readings that fit comfortably.
+                actual = ai_config.count_document_tokens(client, block, MODEL, pages)
+                if pdf_token_used + actual > MAX_PDF_TOKEN_BUDGET:
+                    reason = f"token budget ({actual//1000}k tokens measured)"
+                    print(f"    WARN Skipped (would exceed {MAX_PDF_TOKEN_BUDGET//1000}k budget, "
+                          f"{actual//1000}k tokens): {f.name}")
+                    skipped.append(f.name)
+                    _write_skip_stub(f, reason)
+                    content.append({"type": "text", "text": (
+                        f"=== {f.name} ===\n"
+                        f"[File omitted to stay within the context limit "
+                        f"(~{actual//1000}k tokens). Summarize from Canvas description.]"
+                    )})
+                    continue
+                pdf_token_used += actual
+                print(f"    + {f.name} ({pages}p, {actual//1000}k tokens)")
+                content.append(block)
             else:
-                # Text-based files (.txt, .md, .docx, etc.) — read but cap size
-                try:
-                    text = f.read_text(errors="replace")
-                except Exception:
-                    text = f"[Could not read {f.name}]"
+                # .docx and .pptx are ZIP containers; read_text() on them returned
+                # compressed binary, so a Word reading arrived as noise and slide
+                # decks were skipped outright. Both are extracted properly now.
+                text = ai_config.extract_text(f)
+                if not text.strip():
+                    print(f"    WARN No readable text: {f.name}")
+                    skipped.append(f.name)
+                    continue
                 if len(text) > 400_000:  # ~100k tokens
-                    text = text[:400_000] + "\n[... truncated — file too large ...]"
+                    text = text[:400_000] + "\n[... truncated - file too large ...]"
+                print(f"    + {f.name} ({len(text):,} chars of text)")
                 content.append({"type": "text", "text": f"=== {f.name} ===\n{text}"})
 
     content.append({"type": "text", "text": prompt_text})

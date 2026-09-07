@@ -87,17 +87,28 @@ async def _generate(date_str: str, abbrev: str):
     reading_files = sorted(
         (f for f in session_dir.iterdir()
          if f.is_file() and f.suffix.lower() in _cr.READING_EXTS and "Notes" not in f.name
-         and f.suffix.lower() != ".m4a"),
+         and f.suffix.lower() != ".m4a"
+         # "(skipped)" stubs say a reading was left out — uploading one as a
+         # source tells the hosts about a file they cannot see. "~$" files are
+         # Word lock files, not documents.
+         and "(skipped)" not in f.name and not f.name.startswith("~$")),
         key=lambda f: (-f.stat().st_size if f.suffix.lower() == ".pdf" else 0, f.name),
     )
-    # Exclude PDFs over the page limit (too long to index well)
-    usable = []
+    # Exclude PDFs over the page limit, and byte-identical repeats of a reading
+    # Canvas attached in two places.
+    import hashlib
+    usable, seen = [], {}
     for f in reading_files:
         if f.suffix.lower() == ".pdf":
             pages = _cr.pdf_page_count(f)
             if pages > _cr.PDF_PAGE_LIMIT:
                 print(f"  ⚠ Skipping ({pages}p > {_cr.PDF_PAGE_LIMIT}p limit): {f.name}")
                 continue
+        digest = hashlib.md5(f.read_bytes()).hexdigest()
+        if digest in seen:
+            print(f"  – Duplicate of {seen[digest]}, uploading once: {f.name}")
+            continue
+        seen[digest] = f.name
         usable.append(f)
     reading_files = usable
 
