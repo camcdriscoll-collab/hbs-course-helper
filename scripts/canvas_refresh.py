@@ -838,7 +838,8 @@ def run_podcast_pass(horizon_days: int = PODCAST_HORIZON_DAYS):
               "its window is collected rather than restarted.")
 
 
-def run_daily(skip_prompt_regen: bool = False, with_podcast: bool = False):
+def run_daily(skip_prompt_regen: bool = False, with_podcast: bool = False,
+              podcast_days: int = PODCAST_HORIZON_DAYS):
     """Sync files + refresh Notes for sessions in the next 2 calendar days."""
     now = datetime.now(tz=BOSTON)
     today = now.date()
@@ -894,7 +895,7 @@ def run_daily(skip_prompt_regen: bool = False, with_podcast: bool = False):
     calendar_sync.run()
 
     if with_podcast:
-        run_podcast_pass(PODCAST_HORIZON_DAYS)
+        run_podcast_pass(podcast_days)
 
     print(f"\n{'─'*55}")
     print("  Daily refresh complete.")
@@ -1033,8 +1034,13 @@ def main():
                         help="Don't regenerate notes just because the master prompt changed "
                              "(useful after minor prompt tweaks)")
     parser.add_argument("--with-podcast", action="store_true",
-                        help="Also generate NotebookLM podcasts for sessions within the notes "
+                        help="Also generate NotebookLM podcasts for sessions within the podcast "
                              "window (requires notebooklm login; adds ~10 min per session)")
+    parser.add_argument("--podcast-days", type=int, default=PODCAST_HORIZON_DAYS,
+                        metavar="N",
+                        help=f"How many days ahead to make podcasts for "
+                             f"(default {PODCAST_HORIZON_DAYS}). Use a smaller number to cover "
+                             f"just the rest of this week rather than into next.")
     args = parser.parse_args()
 
     if not wait_for_canvas():
@@ -1043,7 +1049,8 @@ def main():
         return
 
     if args.daily:
-        run_daily(skip_prompt_regen=args.skip_prompt_regen, with_podcast=args.with_podcast)
+        run_daily(skip_prompt_regen=args.skip_prompt_regen, with_podcast=args.with_podcast,
+                  podcast_days=args.podcast_days)
     else:
         run_weekly(skip_prompt_regen=args.skip_prompt_regen, with_podcast=args.with_podcast)
 
