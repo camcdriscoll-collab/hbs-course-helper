@@ -66,6 +66,13 @@ PDF_TOKENS_PER_MB = 200_000          # kept for callers; no longer used here
 MAX_PDF_TOKEN_BUDGET = 700_000       # Sonnet holds 1M; leave room for prompt + output
 PDF_PAGE_LIMIT = 150  # a genuinely outsized document, not a normal long case
 
+# Podcasts get their own, longer horizon than the file sync. They were made in
+# the daily run's 2-day loop, so one could never exist more than two days out —
+# there was no way to have a week of them ready, whatever the schedule said.
+# Generation skips any session whose .m4a already exists, so widening this only
+# adds the episodes that are actually missing.
+PODCAST_HORIZON_DAYS = 7
+
 # ── Env / config ──────────────────────────────────────────────────────────────
 
 def load_env() -> dict:
@@ -732,10 +739,20 @@ def generate_podcast_for_session(session: dict):
     except ImportError:
         print("    ⚠ podcast_gen.py not found on sys.path — skipping podcast")
         return
-    try:
-        asyncio.run(_pg._generate(date_str, abbrev))
-    except Exception as e:
-        print(f"    ✗ Podcast generation failed: {e}")
+    # NotebookLM intermittently times out on a single RPC ("Request timed out
+    # calling GET_NOTEBOOK") and one such blip cost a whole episode. A second
+    # attempt is cheap: the notebook is reused, sources are not re-uploaded, and
+    # a render that has since finished is collected rather than started again.
+    for attempt in (1, 2):
+        try:
+            asyncio.run(_pg._generate(date_str, abbrev))
+            return
+        except Exception as e:
+            if attempt == 1:
+                print(f"    Podcast attempt failed ({e}) — retrying once...")
+                time.sleep(20)
+            else:
+                print(f"    ✗ Podcast generation failed: {e}")
 
 
 # ── Connectivity ──────────────────────────────────────────────────────────────
@@ -769,6 +786,57 @@ def wait_for_canvas(attempts: int = 5, delay: int = 30) -> bool:
 
 
 # ── Modes ─────────────────────────────────────────────────────────────────────
+
+def run_podcast_pass(horizon_days: int = PODCAST_HORIZON_DAYS):
+    """
+    Fill in missing podcasts across the whole horizon, not just the sync window.
+
+    Runs after the sync so a session whose readings arrived tonight is included.
+    Sessions that already have an .m4a are skipped, so the first run does the
+    backlog and later ones do only what is new. Each episode takes 5-15 minutes
+    and they render one at a time, so a full backlog is a long unattended job -
+    which is why this sits at the end, after everything else has been written.
+    """
+    sessions = get_upcoming_sessions(horizon_days=horizon_days)
+    pending = []
+    for s in sessions:
+        folder = (_COURSES.get(s["abbrev"], {}).get("folder_path")
+                  or DEST_ROOT / s["abbrev"])
+        m4a = (folder / f"{s['date_str']} {s['abbrev']}" /
+               f"{s['date_str']} {s['abbrev']} Podcast.m4a")
+        if not m4a.exists():
+            pending.append(s)
+
+    print(f"\n{'─'*55}")
+    print(f"  PODCASTS — next {horizon_days} days")
+    print(f"{'─'*55}")
+    if not pending:
+        print(f"  All {len(sessions)} session(s) already have one.")
+        return
+    print(f"  {len(pending)} of {len(sessions)} session(s) still need one "
+          f"(~{len(pending) * 10} min, one at a time):")
+    for s in pending:
+        print(f"    {s['due_dt'].strftime('%a %d %b')}  {s['abbrev']}")
+
+    made = failed = 0
+    for s in pending:
+        print(f"\n  [{s['date_str']} {s['abbrev']}]")
+        before = made
+        generate_podcast_for_session(s)
+        folder = (_COURSES.get(s["abbrev"], {}).get("folder_path")
+                  or DEST_ROOT / s["abbrev"])
+        m4a = (folder / f"{s['date_str']} {s['abbrev']}" /
+               f"{s['date_str']} {s['abbrev']} Podcast.m4a")
+        if m4a.exists():
+            made += 1
+        else:
+            failed += 1
+
+    print(f"\n  Podcasts: {made} made, {failed} still missing.")
+    if failed:
+        print("  Missing ones are retried on the next run; a render that outran "
+              "its window is collected rather than restarted.")
+
 
 def run_daily(skip_prompt_regen: bool = False, with_podcast: bool = False):
     """Sync files + refresh Notes for sessions in the next 2 calendar days."""
@@ -814,10 +882,6 @@ def run_daily(skip_prompt_regen: bool = False, with_podcast: bool = False):
         else:
             print(f"    ✓ Notes up to date")
 
-        if with_podcast:
-            print(f"    Podcast check...")
-            generate_podcast_for_session(s)
-
     print("\n  Organizing folders...")
     canvas_organize.organize_all(verbose=True)
 
@@ -828,6 +892,9 @@ def run_daily(skip_prompt_regen: bool = False, with_podcast: bool = False):
 
     print("\n  Syncing calendar...")
     calendar_sync.run()
+
+    if with_podcast:
+        run_podcast_pass(PODCAST_HORIZON_DAYS)
 
     print(f"\n{'─'*55}")
     print("  Daily refresh complete.")
