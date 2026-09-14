@@ -22,9 +22,23 @@ PRICES_PER_MTOK = {
 
 
 def estimate_cost(usage, model: str = MODEL) -> float:
-    """USD for one message, or 0.0 if the model isn't in the price table."""
+    """USD for one message, or 0.0 if the model isn't in the price table.
+
+    Accounts for prompt-caching pricing when the API returns cache token counts:
+      - cache_creation_input_tokens: charged at 1.25× the normal input rate
+      - cache_read_input_tokens:     charged at 0.10× the normal input rate
+      - remaining input_tokens:      charged at 1.00× the normal input rate
+    """
     price_in, price_out = PRICES_PER_MTOK.get(model, (0.0, 0.0))
-    return (usage.input_tokens * price_in + usage.output_tokens * price_out) / 1_000_000
+    cache_write = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    cache_read  = getattr(usage, "cache_read_input_tokens",     0) or 0
+    regular_in  = usage.input_tokens - cache_write - cache_read
+    return (
+        regular_in  * price_in
+        + cache_write * price_in * 1.25
+        + cache_read  * price_in * 0.10
+        + usage.output_tokens * price_out
+    ) / 1_000_000
 
 
 def response_text(message) -> str:

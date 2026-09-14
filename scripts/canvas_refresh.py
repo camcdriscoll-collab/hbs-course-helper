@@ -658,7 +658,14 @@ def generate_notes(session: dict):
                     )})
                     continue
                 pdf_token_used += actual
-                print(f"    + {f.name} ({pages}p, {actual//1000}k tokens)")
+                # Cache large PDFs (≥2k tokens, Sonnet's minimum cacheable prefix).
+                # A reading that appears in two consecutive sessions — like the NBIM
+                # case sent back-to-back for IMCM Class 6 and 7 — costs 90% less on
+                # the second send. Cache TTL is 5 minutes, which covers a normal run.
+                if actual >= 2_048:
+                    block["cache_control"] = {"type": "ephemeral"}
+                print(f"    + {f.name} ({pages}p, {actual//1000}k tokens"
+                      f"{', cached' if actual >= 2_048 else ''})")
                 content.append(block)
             else:
                 # .docx and .pptx are ZIP containers; read_text() on them returned
@@ -674,7 +681,8 @@ def generate_notes(session: dict):
                 print(f"    + {f.name} ({len(text):,} chars of text)")
                 content.append({"type": "text", "text": f"=== {f.name} ===\n{text}"})
 
-    content.append({"type": "text", "text": prompt_text})
+    content.append({"type": "text", "text": prompt_text,
+                     "cache_control": {"type": "ephemeral"}})
 
     msg = client.messages.create(
         model=MODEL, max_tokens=8192,
@@ -683,7 +691,12 @@ def generate_notes(session: dict):
     if msg.stop_reason == "max_tokens":
         print(f"    ⚠ Output truncated (hit max_tokens limit) — consider splitting readings")
     cost = ai_config.estimate_cost(msg.usage, MODEL)
-    print(f"    Tokens: {msg.usage.input_tokens:,} in / {msg.usage.output_tokens:,} out  (~${cost:.3f})")
+    cache_read  = getattr(msg.usage, "cache_read_input_tokens",  0) or 0
+    cache_write = getattr(msg.usage, "cache_creation_input_tokens", 0) or 0
+    cache_note  = (f", cache ↓{cache_read//1000}k ↑{cache_write//1000}k"
+                   if cache_read or cache_write else "")
+    print(f"    Tokens: {msg.usage.input_tokens:,} in / {msg.usage.output_tokens:,} out"
+          f"{cache_note}  (~${cost:.3f})")
     result = ai_config.response_text(msg)
 
     # Save canvas hash for staleness detection on future runs
