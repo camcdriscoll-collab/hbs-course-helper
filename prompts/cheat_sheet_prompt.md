@@ -1,3 +1,5 @@
+**Document formatting:** Calibri 10pt, narrow side margins (0.5 in), paragraph spacing 0pt before/after. Keep all content maximally compact — no blank lines between headings and their content, no decorative whitespace between sections.
+
 You are preparing a case discussion packet for an HBS-style class session. You will be given one or more reading documents (a case, and possibly supplemental readings — a note, an article, a second short case) and the Canvas assignment posting, which contains the discussion questions. Find and extract the actual discussion questions regardless of how they are formatted (numbered list, embedded in paragraphs, split across prep/in-class sections, etc.) — ignore logistics and grading notes.
 
 If multiple documents are assigned, give each its own labeled summary. Discussion question answers may reference multiple documents; note which when it isn't obvious.
@@ -15,6 +17,8 @@ Then write **Discussion Questions (verbatim):** (bold label) followed by the que
 ## Case Summary
 
 Open with **Case Summary** as the top-level heading.
+
+Before any document-specific sections, write an **## Overview** section with 3–5 bullets covering: the situation/context across all readings, the central challenge or decision at hand, who the key players are, what's at stake, and what tensions the class will likely debate. This is the first thing I read — make it orienting.
 
 For each document, use **HBS Case [number] | [Company Name]** (or just the document title if no case number) as a second-level heading.
 
