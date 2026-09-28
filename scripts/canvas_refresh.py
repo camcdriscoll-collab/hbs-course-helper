@@ -609,6 +609,9 @@ def generate_notes(session: dict):
     content: list[dict] = []
     skipped: list[str] = []
     pdf_token_used = 0
+    # Anthropic allows at most 4 cache_control blocks per request; reserve 1
+    # for the prompt at the end so PDFs can use at most 3 slots.
+    pdf_cache_blocks = 0
     if reading_files:
         content.append({"type": "text", "text": "Here are the assigned readings:"})
         for f in reading_files:
@@ -662,10 +665,13 @@ def generate_notes(session: dict):
                 # A reading that appears in two consecutive sessions — like the NBIM
                 # case sent back-to-back for IMCM Class 6 and 7 — costs 90% less on
                 # the second send. Cache TTL is 5 minutes, which covers a normal run.
-                if actual >= 2_048:
+                # Cap at 3 PDF cache blocks; 4th slot reserved for the prompt.
+                will_cache = actual >= 2_048 and pdf_cache_blocks < 3
+                if will_cache:
                     block["cache_control"] = {"type": "ephemeral"}
+                    pdf_cache_blocks += 1
                 print(f"    + {f.name} ({pages}p, {actual//1000}k tokens"
-                      f"{', cached' if actual >= 2_048 else ''})")
+                      f"{', cached' if will_cache else ''})")
                 content.append(block)
             else:
                 # .docx and .pptx are ZIP containers; read_text() on them returned
