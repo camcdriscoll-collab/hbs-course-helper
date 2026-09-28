@@ -362,28 +362,36 @@ def sync_course_files(course_id: int, abbrev: str, target_date_str: str | None =
 
 # ── Markdown → docx conversion ───────────────────────────────────────────────
 
+_NOTES_FONT      = "Calibri"
+_NOTES_FONT_SIZE = 10
+
+
 def _parse_inline(para, text: str) -> None:
-    """Add runs to a paragraph with **bold** and *italic* applied. Always 12pt."""
+    """Add runs to a paragraph with **bold** and *italic* applied."""
     from docx.shared import Pt
     for seg in re.split(r'(\*\*[^*]+\*\*|\*[^*]+\*)', text):
         if seg.startswith('**') and seg.endswith('**'):
             r = para.add_run(seg[2:-2])
             r.bold = True
-            r.font.size = Pt(12)
+            r.font.name = _NOTES_FONT
+            r.font.size = Pt(_NOTES_FONT_SIZE)
         elif seg.startswith('*') and seg.endswith('*'):
             r = para.add_run(seg[1:-1])
             r.italic = True
-            r.font.size = Pt(12)
+            r.font.name = _NOTES_FONT
+            r.font.size = Pt(_NOTES_FONT_SIZE)
         elif seg:
-            para.add_run(seg).font.size = Pt(12)
+            r = para.add_run(seg)
+            r.font.name = _NOTES_FONT
+            r.font.size = Pt(_NOTES_FONT_SIZE)
 
 
 def _tight(para) -> None:
-    """Enforce 12pt font and tight spacing on a paragraph."""
+    """Enforce font and minimal spacing on a paragraph."""
     from docx.shared import Pt
     pf = para.paragraph_format
     pf.space_before = Pt(0)
-    pf.space_after  = Pt(6)
+    pf.space_after  = Pt(0)
 
 
 def markdown_to_docx(md_text: str, output_path: Path,
@@ -399,23 +407,24 @@ def markdown_to_docx(md_text: str, output_path: Path,
 
     doc = Document()
 
-    # Force 12pt + tight spacing on all built-in styles up front
+    # Calibri 10pt, minimal spacing on all built-in styles
     for style_name in ('Normal', 'Title', 'Heading 1', 'Heading 2', 'Heading 3',
                        'List Bullet', 'List Bullet 2', 'List Number'):
         try:
             st = doc.styles[style_name]
-            st.font.size = Pt(12)
+            st.font.name = _NOTES_FONT
+            st.font.size = Pt(_NOTES_FONT_SIZE)
             st.paragraph_format.space_before = Pt(0)
-            st.paragraph_format.space_after  = Pt(6)
+            st.paragraph_format.space_after  = Pt(0)
         except KeyError:
             pass
 
-    # Margins: 1.25 in sides, 1 in top/bottom
+    # Margins: narrow (0.5 in) sides, 1 in top/bottom
     for section in doc.sections:
         section.top_margin    = Inches(1)
         section.bottom_margin = Inches(1)
-        section.left_margin   = Inches(1.25)
-        section.right_margin  = Inches(1.25)
+        section.left_margin   = Inches(0.5)
+        section.right_margin  = Inches(0.5)
 
     # Title
     p = doc.add_heading(title, level=0)
@@ -426,8 +435,11 @@ def markdown_to_docx(md_text: str, output_path: Path,
         p = doc.add_paragraph()
         r = p.add_run(f"{key}: ")
         r.bold = True
-        r.font.size = Pt(12)
-        p.add_run(val).font.size = Pt(12)
+        r.font.name = _NOTES_FONT
+        r.font.size = Pt(_NOTES_FONT_SIZE)
+        vr = p.add_run(val)
+        vr.font.name = _NOTES_FONT
+        vr.font.size = Pt(_NOTES_FONT_SIZE)
         _tight(p)
 
     for line in md_text.split('\n'):
