@@ -702,10 +702,36 @@ def generate_notes(session: dict):
     content.append({"type": "text", "text": prompt_text,
                      "cache_control": {"type": "ephemeral"}})
 
-    msg = client.messages.create(
-        model=MODEL, max_tokens=8192,
-        messages=[{"role": "user", "content": content}],
-    )
+    def _call_api(content_blocks):
+        return client.messages.create(
+            model=MODEL, max_tokens=8192,
+            messages=[{"role": "user", "content": content_blocks}],
+        )
+
+    try:
+        msg = _call_api(content)
+    except ant.BadRequestError as e:
+        if "Could not process PDF" not in str(e):
+            raise
+        # One or more PDFs are unprocessable — find and drop them, then retry.
+        doc_indices = [i for i, b in enumerate(content)
+                       if isinstance(b, dict) and b.get("type") == "document"]
+        working_content = list(content)
+        for idx in sorted(doc_indices, reverse=True):
+            candidate = [b for i, b in enumerate(working_content) if i != idx]
+            try:
+                msg = _call_api(candidate)
+                bad_name = working_content[idx].get("title", f"block_{idx}")
+                print(f"    WARN Dropped unprocessable PDF: {bad_name}")
+                skipped.append(bad_name)
+                working_content = candidate
+                break
+            except ant.BadRequestError:
+                continue
+        else:
+            raise  # all PDFs tried, still failing
+        content[:] = working_content
+
     if msg.stop_reason == "max_tokens":
         print(f"    ⚠ Output truncated (hit max_tokens limit) — consider splitting readings")
     cost = ai_config.estimate_cost(msg.usage, MODEL)
@@ -753,37 +779,64 @@ def generate_podcast_for_session(session: dict):
     Generate a NotebookLM podcast for a session (synchronous wrapper).
     Skipped if the .m4a already exists.
     Requires notebooklm-py and a valid ~/.notebooklm session.
+
+    If the course has "podcast_per_reading": true in canvas_config.json, one
+    podcast is generated per reading file instead of a single combined episode.
+    Per-reading mode is considered complete when at least one per-reading .m4a
+    exists in the session folder (missing files are retried on the next run).
     """
     import asyncio
     abbrev    = session["abbrev"]
     date_str  = session["date_str"]
     course_folder = (_COURSES.get(abbrev, {}).get("folder_path") or DEST_ROOT / abbrev)
     session_dir   = course_folder / f"{date_str} {abbrev}"
-    podcast_file  = session_dir / f"{date_str} {abbrev} Podcast.m4a"
+    per_reading   = bool(_COURSES.get(abbrev, {}).get("podcast_per_reading"))
 
-    if podcast_file.exists():
-        print(f"    ✓ Podcast exists: {podcast_file.name}")
-        return
+    if per_reading:
+        # Check if any per-reading podcasts already exist
+        existing = list(session_dir.glob(f"{date_str} {abbrev} Podcast - *.m4a"))
+        if existing:
+            print(f"    ✓ Per-reading podcasts exist ({len(existing)} file(s)): "
+                  f"{', '.join(f.name for f in existing)}")
+            return
+    else:
+        podcast_file = session_dir / f"{date_str} {abbrev} Podcast.m4a"
+        if podcast_file.exists():
+            print(f"    ✓ Podcast exists: {podcast_file.name}")
+            return
 
     try:
         import podcast_gen as _pg
     except ImportError:
         print("    ⚠ podcast_gen.py not found on sys.path — skipping podcast")
         return
-    # NotebookLM intermittently times out on a single RPC ("Request timed out
-    # calling GET_NOTEBOOK") and one such blip cost a whole episode. A second
-    # attempt is cheap: the notebook is reused, sources are not re-uploaded, and
-    # a render that has since finished is collected rather than started again.
-    for attempt in (1, 2):
-        try:
-            asyncio.run(_pg._generate(date_str, abbrev))
-            return
-        except Exception as e:
-            if attempt == 1:
-                print(f"    Podcast attempt failed ({e}) — retrying once...")
-                time.sleep(20)
-            else:
-                print(f"    ✗ Podcast generation failed: {e}")
+
+    if per_reading:
+        for attempt in (1, 2):
+            try:
+                asyncio.run(_pg._generate_per_reading(date_str, abbrev))
+                return
+            except Exception as e:
+                if attempt == 1:
+                    print(f"    Per-reading podcast attempt failed ({e}) — retrying once...")
+                    time.sleep(20)
+                else:
+                    print(f"    ✗ Per-reading podcast generation failed: {e}")
+    else:
+        # NotebookLM intermittently times out on a single RPC ("Request timed out
+        # calling GET_NOTEBOOK") and one such blip cost a whole episode. A second
+        # attempt is cheap: the notebook is reused, sources are not re-uploaded, and
+        # a render that has since finished is collected rather than started again.
+        for attempt in (1, 2):
+            try:
+                asyncio.run(_pg._generate(date_str, abbrev))
+                return
+            except Exception as e:
+                if attempt == 1:
+                    print(f"    Podcast attempt failed ({e}) — retrying once...")
+                    time.sleep(20)
+                else:
+                    print(f"    ✗ Podcast generation failed: {e}")
 
 
 # ── Connectivity ──────────────────────────────────────────────────────────────
