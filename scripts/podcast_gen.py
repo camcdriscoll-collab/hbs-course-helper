@@ -293,6 +293,7 @@ async def _generate_per_reading(date_str: str, abbrev: str, force: bool = False)
 
     instructions = _build_per_reading_instructions(abbrev)
 
+    failed_readings: list[str] = []
     async with NotebookLMClient.from_storage() as client:
         for i, reading_file in enumerate(reading_files, 1):
             reading_stem = reading_file.stem
@@ -309,71 +310,80 @@ async def _generate_per_reading(date_str: str, abbrev: str, force: bool = False)
                     print(f"  Already exists: {podcast_file.name} — skipping")
                     continue
 
-            # Find or create notebook
-            notebooks = await client.notebooks.list()
-            nb = next((n for n in notebooks if n.title == nb_title), None)
-            if nb:
-                print(f"  Reusing notebook: {nb.title}")
-            else:
-                nb = await client.notebooks.create(nb_title)
-                print(f"  Created notebook:  {nb.title}")
-
-            # Upload sources only if notebook is empty
-            existing = await client.sources.list(nb.id)
-            if existing:
-                print(f"  {len(existing)} source(s) already in notebook — skipping upload")
-            else:
-                print(f"  ↑ Uploading {reading_file.name}...")
-                await client.sources.add_file(nb.id, str(reading_file), wait=True, wait_timeout=180.0)
-
-                if assignment:
-                    title = assignment.get("name", f"{session_label} Assignment")
-                    desc  = _cr.strip_html(assignment.get("description") or "")
-                    print(f"  + Adding Canvas assignment: {title}")
-                    await client.sources.add_text(nb.id, title, desc, wait=True)
-
-            # Check for existing completed audio
-            existing_audio = None
             try:
-                for art in await client.artifacts.list_audio(nb.id):
-                    if art.is_completed:
-                        existing_audio = art
-                        break
-            except Exception as e:
-                print(f"  (could not list existing audio: {e})")
+                # Find or create notebook
+                notebooks = await client.notebooks.list()
+                nb = next((n for n in notebooks if n.title == nb_title), None)
+                if nb:
+                    print(f"  Reusing notebook: {nb.title}")
+                else:
+                    nb = await client.notebooks.create(nb_title)
+                    print(f"  Created notebook:  {nb.title}")
 
-            if force and existing_audio is not None:
-                print("  --force: ignoring existing completed audio, regenerating.")
+                # Upload sources only if notebook is empty
+                existing = await client.sources.list(nb.id)
+                if existing:
+                    print(f"  {len(existing)} source(s) already in notebook — skipping upload")
+                else:
+                    print(f"  ↑ Uploading {reading_file.name}...")
+                    await client.sources.add_file(nb.id, str(reading_file), wait=True, wait_timeout=180.0)
+
+                    if assignment:
+                        title = assignment.get("name", f"{session_label} Assignment")
+                        desc  = _cr.strip_html(assignment.get("description") or "")
+                        print(f"  + Adding Canvas assignment: {title}")
+                        await client.sources.add_text(nb.id, title, desc, wait=True)
+
+                # Check for existing completed audio
                 existing_audio = None
-
-            if existing_audio is not None:
-                mins = int((existing_audio.duration_seconds or 0) // 60)
-                print(f"  Audio from an earlier run has finished ({mins} min) — collecting it.")
-            else:
-                print(f"  Generating audio overview (~5–10 min)...", flush=True)
-                status = await client.artifacts.generate_audio(nb.id, instructions=instructions)
-                print(f"  Task: {status.task_id}")
-
-                def _on_change(s):
-                    print(f"  → {s.status}")
-
                 try:
-                    await client.artifacts.wait_for_completion(
-                        nb.id, status.task_id,
-                        timeout=2700.0,
-                        on_status_change=_on_change,
-                    )
-                except ArtifactInProgressTimeoutError:
-                    print(f"\n  Still rendering after 45 min. Re-run later:")
-                    print(f"    ./.venv/bin/python scripts/podcast_gen.py "
-                          f"--per-reading {date_str} {abbrev}")
-                    continue
+                    for art in await client.artifacts.list_audio(nb.id):
+                        if art.is_completed:
+                            existing_audio = art
+                            break
+                except Exception as e:
+                    print(f"  (could not list existing audio: {e})")
 
-            print(f"  ↓ Downloading...")
-            await client.artifacts.download_audio(nb.id, str(podcast_file))
-            print(f"  ✅ Saved: {podcast_file.name}")
+                if force and existing_audio is not None:
+                    print("  --force: ignoring existing completed audio, regenerating.")
+                    existing_audio = None
 
-    print(f"\nDone — {len(reading_files)} per-reading podcast(s) for {session_label}.")
+                if existing_audio is not None:
+                    mins = int((existing_audio.duration_seconds or 0) // 60)
+                    print(f"  Audio from an earlier run has finished ({mins} min) — collecting it.")
+                else:
+                    print(f"  Generating audio overview (~5–10 min)...", flush=True)
+                    status = await client.artifacts.generate_audio(nb.id, instructions=instructions)
+                    print(f"  Task: {status.task_id}")
+
+                    def _on_change(s):
+                        print(f"  → {s.status}")
+
+                    try:
+                        await client.artifacts.wait_for_completion(
+                            nb.id, status.task_id,
+                            timeout=2700.0,
+                            on_status_change=_on_change,
+                        )
+                    except ArtifactInProgressTimeoutError:
+                        print(f"\n  Still rendering after 45 min. Re-run later:")
+                        print(f"    ./.venv/bin/python scripts/podcast_gen.py "
+                              f"--per-reading {date_str} {abbrev}")
+                        continue
+
+                print(f"  ↓ Downloading...")
+                await client.artifacts.download_audio(nb.id, str(podcast_file))
+                print(f"  ✅ Saved: {podcast_file.name}")
+
+            except Exception as e:
+                print(f"  ✗ Failed ({type(e).__name__}: {e}) — skipping, re-run to retry")
+                failed_readings.append(reading_file.name)
+
+    made = len(reading_files) - len(failed_readings)
+    print(f"\nDone — {made}/{len(reading_files)} per-reading podcast(s) for {session_label}.")
+    if failed_readings:
+        print(f"  Failed ({len(failed_readings)}): {', '.join(failed_readings)}")
+        print(f"  Re-run to retry: ./.venv/bin/python scripts/podcast_gen.py --per-reading {date_str} {abbrev}")
 
 
 def main():
