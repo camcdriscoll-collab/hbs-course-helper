@@ -298,10 +298,13 @@ def _discover_courses(token: str, base_url: str, cfg: dict) -> "tuple[dict, bool
         # then a freshly derived one deduped against everything known.
         abbrev = overrides.get(cid) or by_id.get(cid) or _abbrev_from_course(c, taken)
         taken.add(abbrev)
+        _existing = merged.get(abbrev, {})
+        _known = {"canvas_id", "full_name", "folder_name"}
         merged[abbrev] = {
+            **{k: v for k, v in _existing.items() if k not in _known},
             "canvas_id":   c["id"],
             "full_name":   _clean_course_name(c.get("name", abbrev)),
-            "folder_name": merged.get(abbrev, {}).get("folder_name"),
+            "folder_name": _existing.get("folder_name"),
         }
         seen.append(abbrev)
 
@@ -480,7 +483,10 @@ def resolve() -> dict:
 
         CANVAS_IDS[abbrev]   = canvas_id
         COURSE_NAMES[abbrev] = full_name
+        _runtime_known = {"canvas_id", "full_name", "folder_name", "folder_path",
+                          "refinement_prompt"}
         courses[abbrev] = {
+            **{k: v for k, v in entry.items() if k not in _runtime_known},
             "canvas_id":         canvas_id,
             "full_name":         full_name,
             "folder_name":       folder_name,
