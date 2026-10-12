@@ -788,6 +788,10 @@ def generate_podcast_for_session(session: dict):
     import asyncio
     abbrev    = session["abbrev"]
     date_str  = session["date_str"]
+
+    if _COURSES.get(abbrev, {}).get("skip_podcast"):
+        return
+
     course_folder = (_COURSES.get(abbrev, {}).get("folder_path") or DEST_ROOT / abbrev)
     session_dir   = course_folder / f"{date_str} {abbrev}"
     per_reading   = bool(_COURSES.get(abbrev, {}).get("podcast_per_reading"))
@@ -884,6 +888,8 @@ def run_podcast_pass(horizon_days: int = PODCAST_HORIZON_DAYS):
     sessions = get_upcoming_sessions(horizon_days=horizon_days)
     pending = []
     for s in sessions:
+        if _COURSES.get(s["abbrev"], {}).get("skip_podcast"):
+            continue
         folder = (_COURSES.get(s["abbrev"], {}).get("folder_path")
                   or DEST_ROOT / s["abbrev"])
         m4a = (folder / f"{s['date_str']} {s['abbrev']}" /
