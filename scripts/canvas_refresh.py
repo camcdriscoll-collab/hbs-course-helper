@@ -55,7 +55,7 @@ CANVAS_BASE = _paths["canvas_base"]
 BOSTON = ZoneInfo("America/New_York")
 MODEL  = ai_config.MODEL
 
-READING_EXTS = {".pdf", ".docx", ".pptx", ".doc", ".ppt", ".txt"}
+READING_EXTS = {".pdf", ".docx", ".xlsx", ".xls", ".pptx", ".doc", ".ppt", ".txt", ".csv"}
 SLIDE_EXTS   = {".pptx", ".ppt"}   # always routed to General/Slides/
 
 # PDF budget. Token cost is measured with the free count_tokens endpoint rather

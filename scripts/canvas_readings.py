@@ -191,10 +191,30 @@ def _file_exists(session_dir: Path, stem: str) -> bool:
 # ── Playwright downloaders ────────────────────────────────────────────────────
 
 _MAGIC: list[tuple[bytes, str]] = [
-    (b"%PDF",           ".pdf"),
-    (b"PK\x03\x04",    ".docx"),  # ZIP-based: DOCX/XLSX/PPTX
-    (b"\xd0\xcf\x11\xe0", ".doc"),  # OLE: old DOC/XLS/PPT
+    (b"%PDF",             ".pdf"),
+    (b"PK\x03\x04",      None),          # ZIP-based: DOCX/XLSX/PPTX — need peek
+    (b"\xd0\xcf\x11\xe0", ".xls"),       # OLE: old XLS/DOC/PPT — assume XLS if ambiguous
 ]
+
+_KNOWN_EXTS = {".pdf", ".docx", ".xlsx", ".xls", ".pptx", ".doc", ".ppt", ".csv", ".txt"}
+
+
+def _zip_subtype(data: bytes) -> str:
+    """Peek inside a ZIP to distinguish DOCX / XLSX / PPTX by internal folder structure."""
+    import zipfile, io
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            names = z.namelist()
+            if any(n.startswith("xl/") for n in names):
+                return ".xlsx"
+            if any(n.startswith("word/") for n in names):
+                return ".docx"
+            if any(n.startswith("ppt/") for n in names):
+                return ".pptx"
+    except Exception:
+        pass
+    return ".docx"  # fallback
+
 
 def _fix_extension(path: Path) -> Path:
     """
@@ -202,11 +222,14 @@ def _fix_extension(path: Path) -> Path:
     format, rename to the correct extension and return the new path.
     """
     try:
-        magic = path.read_bytes()[:4]
+        data = path.read_bytes()
+        magic = data[:4]
     except Exception:
         return path
     for sig, ext in _MAGIC:
         if magic.startswith(sig):
+            if ext is None:  # ZIP family — need to peek inside
+                ext = _zip_subtype(data)
             if path.suffix.lower() != ext:
                 new = path.with_suffix(ext)
                 path.rename(new)
@@ -218,13 +241,12 @@ def _fix_extension(path: Path) -> Path:
 async def _fetch_hbsp(ctx, href: str, title: str, session_dir: Path,
                       date_str: str) -> bool:
     """
-    Visit an HBSP link and catch the auto-triggered PDF download.
+    Visit an HBSP link and catch the auto-triggered download.
     Works for both /tu/ public links and /api/courses/.../sclinks/ coursepack links.
-    Files are saved as: YYMMDD Clean Title.pdf
+    Files are saved as: YYMMDD Clean Title.<ext> where ext comes from the download.
     Returns True if a new file was saved.
     """
-    fname = f"{_session_filename(date_str, title)}.pdf"
-    out   = session_dir / fname
+    stem = _session_filename(date_str, title)
 
     page = await ctx.new_page()
     try:
@@ -239,11 +261,17 @@ async def _fetch_hbsp(ctx, href: str, title: str, session_dir: Path,
                 except Exception:
                     pass  # "Download is starting" — expected, download still captured
             dl = await dl_info.value
+            # Use the server's suggested filename to determine the real extension
+            suggested = dl.suggested_filename or ""
+            ext = Path(suggested).suffix.lower()
+            if ext not in _KNOWN_EXTS:
+                ext = ".pdf"  # safe fallback
+            out = session_dir / f"{stem}{ext}"
             if out.exists():
                 await dl.cancel()
                 return False
             await dl.save_as(out)
-            # Verify actual file type and rename if mismatched
+            # Double-check magic bytes match the extension (catches mis-labelled downloads)
             out = _fix_extension(out)
             print(f"    ↓ [hbsp] {out.name}")
             return True

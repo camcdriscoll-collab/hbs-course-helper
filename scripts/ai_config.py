@@ -109,6 +109,20 @@ def extract_text(path) -> str:
                     parts.append(f"--- Slide {i} ---\n" + "\n".join(lines))
             return "\n\n".join(parts)
 
+        if suffix in (".xlsx", ".xls"):
+            import openpyxl
+            wb = openpyxl.load_workbook(str(path), read_only=True, data_only=True)
+            parts = []
+            for ws in wb.worksheets:
+                rows = []
+                for row in ws.iter_rows(values_only=True):
+                    cells = [str(c) if c is not None else "" for c in row]
+                    if any(c for c in cells):
+                        rows.append(" | ".join(cells))
+                if rows:
+                    parts.append(f"--- Sheet: {ws.title} ---\n" + "\n".join(rows))
+            return "\n\n".join(parts)
+
         return path.read_text(errors="replace")
     except Exception as e:
         return f"[Could not read {path.name}: {e}]"
