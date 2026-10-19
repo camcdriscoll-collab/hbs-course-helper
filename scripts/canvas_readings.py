@@ -60,6 +60,7 @@ class _AnchorParser(HTMLParser):
         self.links: list[dict] = []
         self._in_a = False
         self._href = ""
+        self._api_endpoint = ""
         self._buf: list[str] = []
         self._in_em = False
         self._em_buf: list[str] = []
@@ -73,6 +74,9 @@ class _AnchorParser(HTMLParser):
         elif tag == "a":
             self._in_a = True
             self._href = d.get("href", "").strip()
+            # Canvas file links carry data-api-endpoint pointing to the files API
+            self._api_endpoint = d.get("data-api-endpoint", "").strip() \
+                if d.get("data-api-returntype") == "File" else ""
             self._buf = []
 
     def handle_endtag(self, tag: str):
@@ -87,11 +91,13 @@ class _AnchorParser(HTMLParser):
             if self._href and title:
                 self.links.append({
                     "href": self._href,
+                    "api_endpoint": self._api_endpoint,  # non-empty → Canvas file
                     "title": title,
                     "optional": self._optional,
                 })
             self._in_a = False
             self._href = ""
+            self._api_endpoint = ""
             self._buf = []
 
     def handle_data(self, data: str):
@@ -104,21 +110,26 @@ class _AnchorParser(HTMLParser):
 def extract_links(html: str) -> list[dict]:
     """
     Parse all reading links from Canvas assignment HTML.
-    Returns list of {href, title, optional}.
-    Excludes Canvas-hosted files (handled by canvas_refresh.py) and
-    non-reading links (LinkedIn, social media, mailto, etc.).
+    Returns list of {href, api_endpoint, title, optional}.
+    - Canvas file links (data-api-returntype="File") are included with api_endpoint set.
+    - Other instructure.com links and non-reading links are excluded.
     """
     p = _AnchorParser()
     p.feed(html)
     return [
         l for l in p.links
-        if not _CANVAS_RE.search(l["href"])
-        and not _SKIP_RE.search(l["href"])
+        if l.get("api_endpoint")                    # Canvas file link → always include
+        or (
+            not _CANVAS_RE.search(l["href"])        # non-Canvas external link
+            and not _SKIP_RE.search(l["href"])
+        )
     ]
 
 
-def classify(href: str) -> str:
-    """Returns 'hbsp' | 'youtube' | 'external'."""
+def classify(href: str, api_endpoint: str = "") -> str:
+    """Returns 'canvas_file' | 'hbsp' | 'youtube' | 'external'."""
+    if api_endpoint:
+        return "canvas_file"
     if _HBSP_RE.search(href):
         return "hbsp"
     if _YT_RE.search(href):
@@ -341,15 +352,54 @@ async def _fetch_article(ctx, href: str, title: str, session_dir: Path,
 
 # ── Main async runner ─────────────────────────────────────────────────────────
 
+def _fetch_canvas_file(link: dict, session_dir: Path, date_str: str) -> bool:
+    """
+    Download a Canvas-hosted file linked in assignment HTML (data-api-returntype="File").
+    Uses the Canvas API to get the download URL, then saves with YYMMDD prefix.
+    Returns True if a new file was saved.
+    """
+    import canvas_refresh as cr
+
+    api_endpoint = link["api_endpoint"]
+    title        = link["title"]
+
+    try:
+        meta = cr.canvas_get(api_endpoint.split("/api/v1/", 1)[-1])
+        if not isinstance(meta, dict):
+            print(f"    ✗ [canvas] {title}: unexpected API response")
+            return False
+        filename   = meta.get("filename") or meta.get("display_name") or title
+        dl_url     = meta.get("url")
+        if not dl_url:
+            print(f"    ✗ [canvas] {title}: no download URL in API response")
+            return False
+        ext  = Path(filename).suffix.lower()
+        stem = _session_filename(date_str, title)
+        dest = session_dir / f"{stem}{ext}"
+        if dest.exists() or _file_exists(session_dir, stem):
+            return False
+        ok = cr.canvas_download(dl_url, dest)
+        if ok:
+            print(f"    ↓ [canvas] {dest.name}")
+        return ok
+    except Exception as e:
+        print(f"    ✗ [canvas] {title}: {e}")
+        return False
+
+
 async def _run(links: list[dict], session_dir: Path, date_str: str) -> int:
     """Async: download all reading links. Returns count of newly saved files."""
     from playwright.async_api import async_playwright
 
     count = 0
 
-    # YouTube stubs — no browser needed
+    # Canvas-hosted files and YouTube stubs — no browser needed
     for link in links:
-        if classify(link["href"]) == "youtube":
+        kind = classify(link["href"], link.get("api_endpoint", ""))
+        if kind == "canvas_file":
+            if _fetch_canvas_file(link, session_dir, date_str):
+                count += 1
+        elif kind == "youtube":
             stem = f"{date_str} {safe_name(link['title'])} (YouTube)"
             out = session_dir / f"{stem}.txt"
             if not out.exists():
@@ -357,8 +407,8 @@ async def _run(links: list[dict], session_dir: Path, date_str: str) -> int:
                 print(f"    ↓ [youtube] {out.name}")
                 count += 1
 
-    hbsp_links = [l for l in links if classify(l["href"]) == "hbsp"]
-    ext_links  = [l for l in links if classify(l["href"]) == "external"]
+    hbsp_links = [l for l in links if classify(l["href"], l.get("api_endpoint", "")) == "hbsp"]
+    ext_links  = [l for l in links if classify(l["href"], l.get("api_endpoint", "")) == "external"]
 
     if not hbsp_links and not ext_links:
         return count
@@ -391,14 +441,19 @@ async def _run(links: list[dict], session_dir: Path, date_str: str) -> int:
 def sync_reading_links(assignment: dict, session_dir: Path) -> int:
     """
     Parse assignment HTML and download all linked readings into session_dir.
-    Files are named: YYMMDD Clean Title.pdf
+    Handles HBSP, external articles, YouTube stubs, and Canvas-hosted files
+    (data-api-returntype="File" links in the assignment description).
     Called from canvas_refresh.py. Returns count of newly saved files.
     """
     html = assignment.get("description") or ""
     if not html:
         return 0
     links = extract_links(html)
-    actionable = [l for l in links if classify(l["href"]) in ("hbsp", "youtube", "external")]
+    actionable = [
+        l for l in links
+        if classify(l["href"], l.get("api_endpoint", ""))
+        in ("hbsp", "youtube", "external", "canvas_file")
+    ]
     if not actionable:
         return 0
 
@@ -465,9 +520,9 @@ def rename_session_files(assignment: dict, date_str: str, session_dir: Path) -> 
     for link in links:
         href  = link["href"]
         title = link["title"]
-        kind  = classify(href)
+        kind  = classify(href, link.get("api_endpoint", ""))
 
-        if kind not in ("hbsp", "external", "youtube"):
+        if kind not in ("hbsp", "external", "youtube", "canvas_file"):
             continue
 
         new_stem = _session_filename(date_str, title)
@@ -618,11 +673,11 @@ def main():
         print(f"\nLinks in {date_str} {abbrev}: {assignment['name']}")
         for l in links:
             opt  = " [optional]" if l["optional"] else ""
-            kind = classify(l["href"])
+            kind = classify(l["href"], l.get("api_endpoint", ""))
             new  = _session_filename(date_str, l["title"])
             print(f"  [{kind}]{opt} {l['title']}")
-            print(f"         → {new}.pdf")
-            print(f"         {l['href']}")
+            print(f"         → {new}.*")
+            print(f"         {l.get('api_endpoint') or l['href']}")
         return
 
     course_folder = _courses[abbrev].get("folder_path") or _paths["coursework_root"] / abbrev
